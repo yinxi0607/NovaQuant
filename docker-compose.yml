@@ -1,0 +1,116 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: api
+    env_file: .env
+    depends_on:
+      - redis
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: agent
+    env_file: .env
+    depends_on:
+      - api
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: collector
+    env_file: .env
+    depends_on:
+      - api
+    ports:
+      - "8091:8091"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8091/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: analyzer
+    env_file: .env
+    depends_on:
+      - api
+    ports:
+      - "8092:8092"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8092/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  alerts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: alerts
+    env_file: .env
+    depends_on:
+      - api
+    ports:
+      - "8093:8093"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8093/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        VITE_API_BASE_URL: http://api:8080/api/v1
+    depends_on:
+      - api
+    ports:
+      - "4173:4173"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4173"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: timescale/timescaledb:latest-pg16
+    profiles: ["db"]
+    environment:
+      POSTGRES_DB: novaquant
+      POSTGRES_USER: novaquant
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"

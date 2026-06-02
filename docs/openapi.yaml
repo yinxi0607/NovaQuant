@@ -1,0 +1,93 @@
+openapi: 3.0.3
+info:
+  title: NovaQuant API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service health
+  /api/v1/symbols:
+    get:
+      summary: List enabled symbols
+      responses:
+        "200":
+          description: Symbols
+  /api/v1/market/overview:
+    get:
+      summary: Market overview cards
+      responses:
+        "200":
+          description: Overview
+  /api/v1/market/{symbol}:
+    get:
+      summary: Symbol snapshot
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Snapshot
+  /api/v1/klines/{symbol}:
+    get:
+      summary: OHLCV series
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: interval
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Klines
+  /api/v1/analysis/{symbol}:
+    get:
+      summary: Latest technical analysis
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Analysis
+  /api/v1/risk/{symbol}:
+    get:
+      summary: Latest risk breakdown
+      parameters:
+        - in: path
+          name: symbol
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Risk
+  /api/v1/agent/chat:
+    post:
+      summary: Research assistant chat
+      requestBody:
+        required: true
+      responses:
+        "200":
+          description: Chat response
+  /api/v1/backtest:
+    post:
+      summary: Run a backtest job
+      requestBody:
+        required: true
+      responses:
+        "200":
+          description: Backtest result
