@@ -27,8 +27,21 @@ func main() {
 
 	repo := repository.New(pool)
 	registry := metrics.New()
-	provider := service.NewBinanceProvider(&http.Client{Timeout: cfg.HTTPTimeout}, cfg.BinanceSpotBaseURL, cfg.BinanceFuturesURL)
-	collector := service.NewCollector(repo, provider, registry)
+	if !cfg.CollectorEnabled {
+		logger.Info("collector disabled by configuration", "collector_enabled", cfg.CollectorEnabled)
+		go serveWorkerHTTP(":"+cfg.CollectorPort, registry)
+		select {}
+	}
+	providers, err := service.NewMarketProviders(cfg, &http.Client{Timeout: cfg.HTTPTimeout})
+	if err != nil {
+		log.Fatal(err)
+	}
+	providerNames := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		providerNames = append(providerNames, provider.Name())
+	}
+	logger.Info("collector providers configured", "providers", providerNames)
+	collector := service.NewCollector(repo, providers, registry)
 
 	go serveWorkerHTTP(":"+cfg.CollectorPort, registry)
 	ticker := time.NewTicker(cfg.ServiceTick)

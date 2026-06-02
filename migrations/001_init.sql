@@ -2,7 +2,7 @@ DO $$
 BEGIN
     CREATE EXTENSION IF NOT EXISTS timescaledb;
 EXCEPTION
-    WHEN undefined_file THEN
+    WHEN undefined_file OR feature_not_supported OR invalid_parameter_value THEN
         RAISE NOTICE 'timescaledb extension not installed, skipping extension creation';
 END $$;
 

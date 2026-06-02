@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "0.0.0.0",
-    port: 5173,
+    port: Number(process.env.WEB_PORT ?? "51740"),
   },
   test: {
     globals: true,

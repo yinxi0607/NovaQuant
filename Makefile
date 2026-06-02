@@ -2,7 +2,12 @@ SHELL := /bin/zsh
 NODE_BIN ?= $(HOME)/.nvm/versions/node/v23.11.0/bin
 export PATH := $(NODE_BIN):$(PATH)
 
-.PHONY: dev migrate seed test test-go test-python test-web test-e2e lint build build-web docker-build up down logs acceptance compose-config
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
+.PHONY: dev migrate seed check-data mcp-db test test-go test-python test-web test-e2e lint build build-web docker-build up down logs acceptance compose-config
 
 dev:
 	docker compose --env-file .env up --build api agent web redis
@@ -12,6 +17,12 @@ migrate:
 
 seed:
 	go run ./cmd/seed
+
+check-data:
+	go run ./cmd/checkdata
+
+mcp-db:
+	go run ./cmd/mcp-db
 
 test:
 	$(MAKE) test-go

@@ -17,8 +17,13 @@ type Config struct {
 	AlertsPort          string
 	WebPort             string
 	OpenAIAPIKey        string
+	CollectorEnabled    bool
+	MarketDataProvider  string
+	MarketDataProviders []string
 	BinanceSpotBaseURL  string
 	BinanceFuturesURL   string
+	OKXBaseURL          string
+	BitgetBaseURL       string
 	DefaultSymbols      []string
 	CollectionIntervals []string
 	NewsRSSURLs         []string
@@ -37,8 +42,13 @@ func Load() Config {
 		AlertsPort:          getenv("ALERTS_PORT", "8093"),
 		WebPort:             getenv("WEB_PORT", "5173"),
 		OpenAIAPIKey:        os.Getenv("OPENAI_API_KEY"),
+		CollectorEnabled:    parseBool(getenv("COLLECTOR_ENABLED", "false"), false),
+		MarketDataProvider:  strings.ToLower(getenv("MARKET_DATA_PROVIDER", "okx")),
+		MarketDataProviders: marketDataProviders(),
 		BinanceSpotBaseURL:  getenv("BINANCE_SPOT_BASE_URL", "https://api.binance.com"),
 		BinanceFuturesURL:   getenv("BINANCE_FUTURES_BASE_URL", "https://fapi.binance.com"),
+		OKXBaseURL:          getenv("OKX_BASE_URL", "https://www.okx.com"),
+		BitgetBaseURL:       getenv("BITGET_BASE_URL", "https://api.bitget.com"),
 		DefaultSymbols:      splitCSV(getenv("DEFAULT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,DOGEUSDT")),
 		CollectionIntervals: splitCSV(getenv("COLLECTION_INTERVALS", "1m,5m,15m,1h,4h,1d")),
 		NewsRSSURLs:         splitCSV(getenv("NEWS_RSS_URLS", "")),
@@ -66,6 +76,18 @@ func splitCSV(value string) []string {
 	return out
 }
 
+func marketDataProviders() []string {
+	providers := splitCSV(strings.ToLower(getenv("MARKET_DATA_PROVIDERS", "")))
+	if len(providers) > 0 {
+		return providers
+	}
+	legacy := strings.ToLower(strings.TrimSpace(getenv("MARKET_DATA_PROVIDER", "okx")))
+	if legacy == "" {
+		return []string{"okx"}
+	}
+	return []string{legacy}
+}
+
 func parseDuration(value string, fallback time.Duration) time.Duration {
 	d, err := time.ParseDuration(value)
 	if err != nil {
@@ -80,4 +102,12 @@ func ParseInt(value string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func parseBool(value string, fallback bool) bool {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }

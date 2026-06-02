@@ -29,6 +29,12 @@ cp .env.example .env
 
 默认假设你已经有自己的 PostgreSQL/TimescaleDB。`docker-compose` 不会默认起本地数据库；如需本地库，可使用 `db` profile。
 
+如果你的网络对交易所 API 有限制，可以同时配置多个上游，采集器会按顺序自动回退：
+
+```env
+MARKET_DATA_PROVIDERS=bitget,okx,binance
+```
+
 3. 初始化数据库并写入演示数据
 
 ```bash
@@ -53,15 +59,16 @@ npm run dev
 
 默认地址:
 
-- API: `http://localhost:8080`
+- API: `http://localhost:50800`
 - Agent: `http://localhost:8090`
-- Web: `http://localhost:5173`
+- Web: `http://localhost:51740`
 
 ## 常用命令
 
 ```bash
 make migrate
 make seed
+make check-data
 make test
 make test-go
 make test-web
@@ -82,6 +89,7 @@ make compose-config
 - 回测: `/api/v1/backtest`
 - 资讯/ETF/Whale/Alerts: `/api/v1/news`, `/api/v1/etf`, `/api/v1/whale`, `/api/v1/alerts`
 - React 页面: 总览、详情、AI、风险、鲸鱼、ETF、新闻、策略、设置
+- 只读 MCP 服务: `make mcp-db`
 
 ## 测试状态
 
@@ -90,6 +98,42 @@ make compose-config
 - `go test ./...`
 - `cd web && npm test`
 - `cd web && npm run build`
+
+## 数据检查
+
+如果你想快速确认数据库里是否已经有 `BTC/ETH` 的最新价格、`1m` K 线、分析和 ETF 数据，可以执行:
+
+```bash
+make check-data
+```
+
+它会输出一段 JSON，重点看:
+
+- `latest_price_source`
+- `latest_price_ts`
+- `kline_1m_rows`
+- `latest_analysis_1h_trend`
+- `latest_analysis_4h_trend`
+- `latest_analysis_1d_trend`
+
+如果 `latest_price_source` 显示为 `bitget`、`okx` 或 `binance`，并且 `kline_1m_rows > 0`，说明实时采集已经落库，不再只是种子数据。
+
+## MCP 读取
+
+项目内置了一个只读的数据库 MCP 服务，启动方式:
+
+```bash
+make mcp-db
+```
+
+当前暴露的工具:
+
+- `db_health`
+- `market_overview`
+- `symbol_analysis`
+- `etf_flows`
+
+这个服务通过 `stdio` 工作，适合后面挂到支持 MCP 的客户端里，直接读取 NovaQuant 数据库内容。
 
 未在当前环境完成:
 
