@@ -7,15 +7,19 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"NovaQuant/internal/domain"
 	"NovaQuant/internal/metrics"
+	"NovaQuant/internal/service"
 )
 
 type contextKey string
 
 const requestIDKey contextKey = "request_id"
+const authSessionKey contextKey = "auth_session"
 
 type rateLimiter struct {
 	mu      sync.Mutex
@@ -77,7 +81,7 @@ func withRecover(next http.Handler, logger *slog.Logger, registry *metrics.Regis
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-ID")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -112,11 +116,40 @@ func withRateLimit(next http.Handler, limiter *rateLimiter) http.Handler {
 	})
 }
 
+func withAuth(next http.Handler, auth *service.AuthService, publicPaths map[string]bool) http.Handler {
+	if auth == nil || !auth.Enabled() {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if publicPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
+		header := strings.TrimSpace(r.Header.Get("Authorization"))
+		if !strings.HasPrefix(header, "Bearer ") {
+			writeError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "missing bearer token", nil)
+			return
+		}
+		session, err := auth.ValidateToken(strings.TrimSpace(strings.TrimPrefix(header, "Bearer ")))
+		if err != nil {
+			writeError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", err.Error(), nil)
+			return
+		}
+		ctx := context.WithValue(r.Context(), authSessionKey, session)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func requestID(ctx context.Context) string {
 	if value, ok := ctx.Value(requestIDKey).(string); ok {
 		return value
 	}
 	return ""
+}
+
+func authSessionFromContext(ctx context.Context) (domain.AuthSession, bool) {
+	value, ok := ctx.Value(authSessionKey).(domain.AuthSession)
+	return value, ok
 }
 
 func randomID() string {

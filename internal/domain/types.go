@@ -190,6 +190,30 @@ type AgentChatResponse struct {
 	Disclaimer    string          `json:"disclaimer"`
 }
 
+type AuthConfigResponse struct {
+	Enabled   bool   `json:"enabled"`
+	Username  string `json:"username"`
+	Algorithm string `json:"algorithm"`
+	PublicKey string `json:"public_key"`
+}
+
+type AuthLoginRequest struct {
+	Username          string `json:"username"`
+	Password          string `json:"password,omitempty"`
+	EncryptedPassword string `json:"encrypted_password,omitempty"`
+}
+
+type AuthSession struct {
+	Username  string    `json:"username"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type AuthLoginResponse struct {
+	Token     string      `json:"token"`
+	Session   AuthSession `json:"session"`
+	ExpiresAt time.Time   `json:"expires_at"`
+}
+
 type BacktestRequest struct {
 	Strategy  string         `json:"strategy"`
 	Symbol    string         `json:"symbol"`

@@ -11,10 +11,11 @@ import (
 
 type Agent struct {
 	repo *repository.Repository
+	llm  *LLMClient
 }
 
-func NewAgent(repo *repository.Repository) *Agent {
-	return &Agent{repo: repo}
+func NewAgent(repo *repository.Repository, llm *LLMClient) *Agent {
+	return &Agent{repo: repo, llm: llm}
 }
 
 func (a *Agent) Chat(ctx context.Context, req domain.AgentChatRequest) (domain.AgentChatResponse, error) {
@@ -50,6 +51,12 @@ func (a *Agent) Chat(ctx context.Context, req domain.AgentChatRequest) (domain.A
 	}
 
 	answer := renderAnswer(symbol, snapshot, analysisDay, analysisWeek, analysisMonth, risk, news)
+	if a.llm != nil && a.llm.Enabled() {
+		llmAnswer, err := a.renderLLMAnswer(ctx, req, snapshot, analysisDay, analysisWeek, analysisMonth, risk, news)
+		if err == nil && strings.TrimSpace(llmAnswer) != "" {
+			answer = llmAnswer
+		}
+	}
 	evidence := []domain.AgentEvidence{
 		{Type: "day_analysis", Symbol: symbol, Timestamp: analysisDay.TS, Summary: analysisDay.Summary},
 		{Type: "week_analysis", Symbol: symbol, Timestamp: analysisWeek.TS, Summary: analysisWeek.Summary},
@@ -84,6 +91,35 @@ func (a *Agent) Chat(ctx context.Context, req domain.AgentChatRequest) (domain.A
 		DataTimestamp: analysisDay.TS,
 		Disclaimer:    "This is not financial advice.",
 	}, nil
+}
+
+func (a *Agent) renderLLMAnswer(ctx context.Context, req domain.AgentChatRequest, snapshot domain.MarketSnapshot, analysisDay, analysisWeek, analysisMonth domain.Analysis, risk domain.Risk, news []domain.NewsItem) (string, error) {
+	if a.llm == nil || !a.llm.Enabled() {
+		return "", nil
+	}
+	systemPrompt := "You are a crypto market research assistant. Use only the supplied structured data. Do not fabricate prices, indicators, or events. Keep the answer concise, practical, and in Chinese."
+	var builder strings.Builder
+	builder.WriteString("Question: ")
+	builder.WriteString(strings.TrimSpace(req.Question))
+	builder.WriteString("\n\nStructured context:\n")
+	builder.WriteString(fmt.Sprintf("Symbol: %s\n", snapshot.Symbol))
+	builder.WriteString(fmt.Sprintf("Price: %.4f\n24h change: %.4f%%\nFunding rate: %.6f\nOpen interest: %.4f\nRisk score: %d\nRisk level: %s\n", snapshot.Price, snapshot.Change24H, snapshot.FundingRate, snapshot.OpenInterest, risk.TotalScore, risk.RiskLevel))
+	builder.WriteString(fmt.Sprintf("1h trend: %s | regime: %s | summary: %s\n", analysisDay.Trend, analysisDay.MarketRegime, analysisDay.Summary))
+	builder.WriteString(fmt.Sprintf("4h trend: %s | regime: %s | summary: %s\n", analysisWeek.Trend, analysisWeek.MarketRegime, analysisWeek.Summary))
+	builder.WriteString(fmt.Sprintf("1d trend: %s | regime: %s | summary: %s\n", analysisMonth.Trend, analysisMonth.MarketRegime, analysisMonth.Summary))
+	builder.WriteString(fmt.Sprintf("Monthly support: %v\nMonthly resistance: %v\n", analysisMonth.SupportLevels, analysisMonth.ResistanceLevels))
+	if len(news) > 0 {
+		builder.WriteString("Recent news:\n")
+		for _, item := range news {
+			builder.WriteString("- ")
+			builder.WriteString(item.Title)
+			builder.WriteString(" | sentiment: ")
+			builder.WriteString(item.Sentiment)
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\nReturn a compact Chinese briefing with: current state, day/week/month trend, risk, key support/resistance, and one clear caution.")
+	return a.llm.Chat(ctx, systemPrompt, builder.String())
 }
 
 func renderAnswer(symbol string, snapshot domain.MarketSnapshot, analysisDay, analysisWeek, analysisMonth domain.Analysis, risk domain.Risk, news []domain.NewsItem) string {

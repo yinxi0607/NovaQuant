@@ -26,9 +26,14 @@ func main() {
 
 	repo := repository.New(pool)
 	registry := metrics.New()
-	agent := service.NewAgent(repo)
+	llm := service.NewLLMClient(cfg)
+	agent := service.NewAgent(repo, llm)
+	auth, err := service.NewAuthService(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	backtester := service.NewBacktester(repo)
-	server := httpapi.NewServer(cfg, logger, repo, agent, backtester, registry)
+	server := httpapi.NewServer(cfg, logger, repo, agent, auth, backtester, registry)
 
 	logger.Info("agent starting", "port", cfg.AgentPort)
 	if err := httpapi.Serve(":"+cfg.AgentPort, server.Handler()); err != nil {

@@ -13,4 +13,5 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata wget
 WORKDIR /app
 COPY --from=build /out/app /app/app
+COPY --from=build /src/migrations /app/migrations
 ENTRYPOINT ["/app/app"]

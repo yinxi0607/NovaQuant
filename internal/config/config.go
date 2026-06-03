@@ -17,6 +17,10 @@ type Config struct {
 	AlertsPort          string
 	WebPort             string
 	OpenAIAPIKey        string
+	LLMBaseURL          string
+	LLMAPIKey           string
+	LLMModel            string
+	LLMChatPath         string
 	CollectorEnabled    bool
 	MarketDataProvider  string
 	MarketDataProviders []string
@@ -27,6 +31,12 @@ type Config struct {
 	DefaultSymbols      []string
 	CollectionIntervals []string
 	NewsRSSURLs         []string
+	AuthEnabled         bool
+	AuthUsername        string
+	AuthPassword        string
+	AuthPasswordSHA256  string
+	AuthTokenSecret     string
+	AuthTokenTTL        time.Duration
 	HTTPTimeout         time.Duration
 	ServiceTick         time.Duration
 }
@@ -36,12 +46,16 @@ func Load() Config {
 		PGDSN:               os.Getenv("PG_DSN"),
 		RedisURL:            getenv("REDIS_URL", ""),
 		APIPort:             getenv("API_PORT", "8080"),
-		AgentPort:           getenv("AGENT_PORT", "8090"),
-		CollectorPort:       getenv("COLLECTOR_PORT", "8091"),
-		AnalyzerPort:        getenv("ANALYZER_PORT", "8092"),
-		AlertsPort:          getenv("ALERTS_PORT", "8093"),
+		AgentPort:           getenv("AGENT_PORT", "50890"),
+		CollectorPort:       getenv("COLLECTOR_PORT", "50891"),
+		AnalyzerPort:        getenv("ANALYZER_PORT", "50892"),
+		AlertsPort:          getenv("ALERTS_PORT", "50893"),
 		WebPort:             getenv("WEB_PORT", "5173"),
 		OpenAIAPIKey:        os.Getenv("OPENAI_API_KEY"),
+		LLMBaseURL:          getenv("LLM_BASE_URL", ""),
+		LLMAPIKey:           getenv("LLM_API_KEY", getenv("OPENAI_API_KEY", "")),
+		LLMModel:            getenv("LLM_MODEL", ""),
+		LLMChatPath:         getenv("LLM_CHAT_PATH", "/v1/chat/completions"),
 		CollectorEnabled:    parseBool(getenv("COLLECTOR_ENABLED", "false"), false),
 		MarketDataProvider:  strings.ToLower(getenv("MARKET_DATA_PROVIDER", "okx")),
 		MarketDataProviders: marketDataProviders(),
@@ -52,6 +66,12 @@ func Load() Config {
 		DefaultSymbols:      splitCSV(getenv("DEFAULT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,DOGEUSDT")),
 		CollectionIntervals: splitCSV(getenv("COLLECTION_INTERVALS", "1m,5m,15m,1h,4h,1d")),
 		NewsRSSURLs:         splitCSV(getenv("NEWS_RSS_URLS", "")),
+		AuthEnabled:         parseBool(getenv("AUTH_ENABLED", "false"), false),
+		AuthUsername:        getenv("AUTH_USERNAME", "admin"),
+		AuthPassword:        os.Getenv("AUTH_PASSWORD"),
+		AuthPasswordSHA256:  strings.ToLower(getenv("AUTH_PASSWORD_SHA256", "")),
+		AuthTokenSecret:     getenv("AUTH_TOKEN_SECRET", ""),
+		AuthTokenTTL:        parseDuration(getenv("AUTH_TOKEN_TTL", "12h"), 12*time.Hour),
 		HTTPTimeout:         parseDuration(getenv("HTTP_TIMEOUT", "10s"), 10*time.Second),
 		ServiceTick:         parseDuration(getenv("SERVICE_TICK", "1m"), time.Minute),
 	}

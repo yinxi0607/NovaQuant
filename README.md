@@ -35,12 +35,58 @@ cp .env.example .env
 MARKET_DATA_PROVIDERS=bitget,okx,binance
 ```
 
+如果你要接入自己的大模型或第三方兼容模型接口，可以配置:
+
+```env
+LLM_BASE_URL=https://your-openai-compatible-host
+LLM_API_KEY=your_api_key
+LLM_MODEL=your_model_name
+LLM_CHAT_PATH=/v1/chat/completions
+```
+
+如果不配置这些变量，`AI Briefing` 会退回到本地模板摘要模式。
+
+默认也支持登录保护，登录口令会先在前端用 `RSA-OAEP-256` 加密再提交:
+
+```env
+AUTH_ENABLED=true
+AUTH_USERNAME=admin
+AUTH_PASSWORD=change-this-password
+AUTH_TOKEN_SECRET=change-this-token-secret
+VITE_AUTH_ENABLED=true
+```
+
+说明:
+
+- 前端口令加密只覆盖登录提交本身
+- 生产环境仍然应该启用 HTTPS，这才是完整的传输层保护
+
 3. 初始化数据库并写入演示数据
 
 ```bash
 make migrate
 make seed
 ```
+
+或者直接使用 Docker Compose 一步启动，所有后端服务都会从项目根目录 `.env` 读取配置:
+
+```bash
+docker compose --env-file .env up --build
+```
+
+其中:
+
+- 本地直接运行 Go 命令时使用 `PG_DSN` / `REDIS_URL`
+- Docker Compose 内部会自动改用 `DOCKER_PG_DSN` / `DOCKER_REDIS_URL`
+
+这样你不用来回改同一个 `.env`。
+
+这条命令会按顺序启动:
+
+- `migrate`
+- `seed`
+- `api / agent / collector / analyzer / alerts`
+- `web`
 
 4. 启动后端 API
 
@@ -60,7 +106,7 @@ npm run dev
 默认地址:
 
 - API: `http://localhost:50800`
-- Agent: `http://localhost:8090`
+- Agent: `http://localhost:50890`
 - Web: `http://localhost:51740`
 
 ## 常用命令

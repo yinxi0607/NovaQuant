@@ -1,8 +1,37 @@
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: migrate
+    env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: "no"
+
+  seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: seed
+    env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
 
   api:
     build:
@@ -11,12 +40,20 @@ services:
       args:
         SERVICE: api
     env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      seed:
+        condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      - "${API_PORT}:${API_PORT}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/v1/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${API_PORT}/api/v1/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -28,12 +65,18 @@ services:
       args:
         SERVICE: agent
     env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "8090:8090"
+      - "${AGENT_PORT}:${AGENT_PORT}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8090/api/v1/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${AGENT_PORT}/api/v1/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -45,12 +88,18 @@ services:
       args:
         SERVICE: collector
     env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "8091:8091"
+      - "${COLLECTOR_PORT}:${COLLECTOR_PORT}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8091/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${COLLECTOR_PORT}/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -62,12 +111,18 @@ services:
       args:
         SERVICE: analyzer
     env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "8092:8092"
+      - "${ANALYZER_PORT}:${ANALYZER_PORT}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8092/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${ANALYZER_PORT}/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -79,12 +134,18 @@ services:
       args:
         SERVICE: alerts
     env_file: .env
+    environment:
+      PG_DSN: ${DOCKER_PG_DSN}
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
-      - "8093:8093"
+      - "${ALERTS_PORT}:${ALERTS_PORT}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8093/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${ALERTS_PORT}/health"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -94,13 +155,17 @@ services:
       context: .
       dockerfile: web/Dockerfile
       args:
-        VITE_API_BASE_URL: http://api:8080/api/v1
+        VITE_API_BASE_URL: http://127.0.0.1:${API_PORT}/api/v1
+        VITE_AUTH_ENABLED: ${VITE_AUTH_ENABLED}
+    env_file: .env
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    command: ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "${WEB_PORT}"]
     ports:
-      - "4173:4173"
+      - "${WEB_PORT}:${WEB_PORT}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4173"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:${WEB_PORT}"]
       interval: 15s
       timeout: 5s
       retries: 5

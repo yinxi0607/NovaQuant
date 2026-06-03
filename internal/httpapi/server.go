@@ -29,6 +29,7 @@ type Server struct {
 	logger     *slog.Logger
 	repo       *repository.Repository
 	agent      *service.Agent
+	auth       *service.AuthService
 	backtester *service.Backtester
 	metrics    *metrics.Registry
 	cache      *memoryCache
@@ -44,12 +45,16 @@ type cacheItem struct {
 	expires time.Time
 }
 
-func NewServer(cfg config.Config, logger *slog.Logger, repo *repository.Repository, agent *service.Agent, backtester *service.Backtester, registry *metrics.Registry) *Server {
+func NewServer(cfg config.Config, logger *slog.Logger, repo *repository.Repository, agent *service.Agent, auth *service.AuthService, backtester *service.Backtester, registry *metrics.Registry) *Server {
+	if auth == nil {
+		auth = &service.AuthService{}
+	}
 	return &Server{
 		cfg:        cfg,
 		logger:     logger,
 		repo:       repo,
 		agent:      agent,
+		auth:       auth,
 		backtester: backtester,
 		metrics:    registry,
 		cache:      &memoryCache{items: map[string]cacheItem{}},
@@ -59,6 +64,10 @@ func NewServer(cfg config.Config, logger *slog.Logger, repo *repository.Reposito
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("GET /api/v1/auth/config", s.handleAuthConfig)
+	mux.HandleFunc("GET /api/v1/auth/public-key", s.handleAuthConfig)
+	mux.HandleFunc("POST /api/v1/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("GET /api/v1/auth/session", s.handleAuthSession)
 	mux.HandleFunc("GET /api/v1/symbols", s.handleSymbols)
 	mux.HandleFunc("GET /api/v1/market/overview", s.handleOverview)
 	mux.HandleFunc("GET /api/v1/market/{symbol}", s.handleMarketSnapshot)
@@ -82,6 +91,12 @@ func (s *Server) Handler() http.Handler {
 	handler = withCORS(handler)
 	handler = withLogging(handler, s.logger, s.metrics)
 	handler = withRateLimit(handler, newRateLimiter(120))
+	handler = withAuth(handler, s.auth, map[string]bool{
+		"/api/v1/health":          true,
+		"/api/v1/auth/config":     true,
+		"/api/v1/auth/public-key": true,
+		"/api/v1/auth/login":      true,
+	})
 	return handler
 }
 
@@ -105,6 +120,37 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"services":   statuses,
 		"request_id": requestID(r.Context()),
 	})
+}
+
+func (s *Server) handleAuthConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.auth.Config())
+}
+
+func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.auth.Enabled() {
+		writeError(w, r, http.StatusBadRequest, "AUTH_DISABLED", "authentication is disabled", nil)
+		return
+	}
+	var req domain.AuthLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "invalid request body", nil)
+		return
+	}
+	resp, err := s.auth.Login(r.Context(), req)
+	if err != nil {
+		writeError(w, r, http.StatusUnauthorized, "AUTH_FAILED", err.Error(), nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
+	session, ok := authSessionFromContext(r.Context())
+	if !ok {
+		writeError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "missing session", nil)
+		return
+	}
+	writeJSON(w, http.StatusOK, session)
 }
 
 func (s *Server) handleSymbols(w http.ResponseWriter, r *http.Request) {

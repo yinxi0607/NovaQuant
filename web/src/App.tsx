@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import { OverviewPage } from "./pages/OverviewPage";
 import { SymbolPage } from "./pages/SymbolPage";
@@ -8,6 +9,9 @@ import { EtfPage } from "./pages/EtfPage";
 import { NewsPage } from "./pages/NewsPage";
 import { StrategyPage } from "./pages/StrategyPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { LoginPage } from "./pages/LoginPage";
+import { AuthSession, apiGet } from "./lib/api";
+import { AUTH_ENABLED, clearAuth, getStoredToken, getStoredUser, storeAuth } from "./lib/auth";
 
 const links = [
   { to: "/", label: "Overview" },
@@ -21,6 +25,61 @@ const links = [
 ];
 
 export default function App() {
+  const [session, setSession] = useState<AuthSession | null>(() => {
+    if (!AUTH_ENABLED) {
+      return { username: "guest", expires_at: "" };
+    }
+    const username = getStoredUser();
+    return username ? { username, expires_at: "" } : null;
+  });
+  const [bootstrapping, setBootstrapping] = useState(AUTH_ENABLED);
+
+  useEffect(() => {
+    if (!AUTH_ENABLED) {
+      setBootstrapping(false);
+      return;
+    }
+    const token = getStoredToken();
+    if (!token) {
+      setBootstrapping(false);
+      return;
+    }
+    apiGet<AuthSession>("/auth/session")
+      .then((data) => setSession(data))
+      .catch(() => {
+        clearAuth();
+        setSession(null);
+      })
+      .finally(() => setBootstrapping(false));
+  }, []);
+
+  function handleLoggedIn(token: string, username: string) {
+    const nextSession = { username, expires_at: "" };
+    storeAuth(token, nextSession);
+    setSession(nextSession);
+  }
+
+  function handleLogout() {
+    clearAuth();
+    setSession(null);
+  }
+
+  if (AUTH_ENABLED && bootstrapping) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-card">
+          <p className="eyebrow">NovaQuant Access</p>
+          <h1>Checking session</h1>
+          <p className="muted">正在验证当前登录状态。</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (AUTH_ENABLED && !session) {
+    return <LoginPage onLoggedIn={handleLoggedIn} />;
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -54,8 +113,16 @@ export default function App() {
             <p className="eyebrow">Research Platform</p>
             <h2>Live dashboard from NovaQuant APIs</h2>
           </div>
-          <div className="timestamp-pill">
-            {new Date().toLocaleString("zh-CN", { hour12: false })}
+          <div className="topbar-actions">
+            {AUTH_ENABLED ? <span className="timestamp-pill">Signed in as {session?.username}</span> : null}
+            <div className="timestamp-pill">
+              {new Date().toLocaleString("zh-CN", { hour12: false })}
+            </div>
+            {AUTH_ENABLED ? (
+              <button type="button" className="secondary-button" onClick={handleLogout}>
+                Logout
+              </button>
+            ) : null}
           </div>
         </header>
         <Routes>

@@ -1,7 +1,18 @@
-export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v1";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:50800/api/v1";
+const AUTH_TOKEN_KEY = "novaquant.auth.token";
+
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_TOKEN_KEY);
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+  const token = getStoredToken();
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
   if (!response.ok) {
     throw new Error(await response.text());
   }
@@ -9,9 +20,13 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+  const token = getStoredToken();
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -123,6 +138,24 @@ export type AgentResponse = {
   resistance: number[];
   evidence: Array<{ type: string; summary: string; timestamp: string }>;
   data_timestamp: string;
+};
+
+export type AuthSession = {
+  username: string;
+  expires_at: string;
+};
+
+export type AuthConfig = {
+  enabled: boolean;
+  username: string;
+  algorithm: string;
+  public_key: string;
+};
+
+export type AuthLoginResponse = {
+  token: string;
+  session: AuthSession;
+  expires_at: string;
 };
 
 export type BacktestResponse = {
