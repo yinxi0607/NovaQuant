@@ -27,7 +27,8 @@ cp .env.example .env
 
 2. 修改 `.env` 中的 `PG_DSN`
 
-默认假设你已经有自己的 PostgreSQL/TimescaleDB。`docker-compose` 不会默认起本地数据库；如需本地库，可使用 `db` profile。
+本地直接运行 Go 命令时使用 `PG_DSN` 连接你自己的 PostgreSQL / TimescaleDB。
+`docker compose` 默认会启动内部 `db` 服务，不再依赖宿主机数据库，并通过命名卷持久化数据。
 
 如果你的网络对交易所 API 有限制，可以同时配置多个上游，采集器会按顺序自动回退：
 
@@ -77,12 +78,12 @@ docker compose --env-file .env up --build
 其中:
 
 - 本地直接运行 Go 命令时使用 `PG_DSN` / `REDIS_URL`
-- Docker Compose 内部会自动改用 `DOCKER_PG_DSN` / `DOCKER_REDIS_URL`
-
-这样你不用来回改同一个 `.env`。
+- Docker Compose 内部会自动改用内置 `db` 服务和 `DOCKER_REDIS_URL`
+- 内置数据库账号可通过 `DOCKER_POSTGRES_DB` / `DOCKER_POSTGRES_USER` / `DOCKER_POSTGRES_PASSWORD` 调整
 
 这条命令会按顺序启动:
 
+- `db / redis`
 - `migrate`
 - `seed`
 - `api / agent / collector / analyzer / alerts`
@@ -125,6 +126,8 @@ make down
 make compose-config
 ```
 
+这些命令里，`make migrate`、`make seed`、`make check-data`、`make mcp-db` 现在都通过 `docker compose run` 在容器内执行，直接走内部 `db` 服务。
+
 `make test-python` 保留为兼容目标，但会转向 Go 版本的 agent/service 测试，因为本项目已经按你的要求移除了 Python Agent 实现。
 
 ## 已实现模块
@@ -136,6 +139,12 @@ make compose-config
 - 资讯/ETF/Whale/Alerts: `/api/v1/news`, `/api/v1/etf`, `/api/v1/whale`, `/api/v1/alerts`
 - React 页面: 总览、详情、AI、风险、鲸鱼、ETF、新闻、策略、设置
 - 只读 MCP 服务: `make mcp-db`
+
+ETF 数据当前通过 `SOSO Value` 的 `summary-history` 接口采集，相关环境变量:
+
+- `SOSO_BASE_URL`
+- `SOSO_ETF_API_KEY`
+- `ETF_COUNTRY_CODE`
 
 ## 测试状态
 

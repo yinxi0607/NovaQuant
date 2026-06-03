@@ -212,16 +212,13 @@ CREATE TABLE IF NOT EXISTS backtest_results (
 
 DO $$
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
-        PERFORM create_hypertable('market_price', 'ts', if_not_exists => TRUE);
-        PERFORM create_hypertable('market_kline', 'open_time', if_not_exists => TRUE);
-        PERFORM create_hypertable('market_funding', 'funding_time', if_not_exists => TRUE);
-        PERFORM create_hypertable('market_open_interest', 'ts', if_not_exists => TRUE);
-        PERFORM create_hypertable('market_analysis', 'ts', if_not_exists => TRUE);
-        PERFORM create_hypertable('market_risk', 'ts', if_not_exists => TRUE);
-        PERFORM create_hypertable('whale_transactions', 'ts', if_not_exists => TRUE);
-    END IF;
-END $$;
+	    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+	        PERFORM create_hypertable('market_price', 'ts', if_not_exists => TRUE);
+	        PERFORM create_hypertable('market_kline', 'open_time', if_not_exists => TRUE);
+	        PERFORM create_hypertable('market_funding', 'funding_time', if_not_exists => TRUE);
+	        PERFORM create_hypertable('market_open_interest', 'ts', if_not_exists => TRUE);
+	    END IF;
+	END $$;
 
 CREATE INDEX IF NOT EXISTS idx_kline_symbol_interval_time ON market_kline(symbol, interval, open_time DESC);
 CREATE INDEX IF NOT EXISTS idx_analysis_symbol_interval_time ON market_analysis(symbol, interval, ts DESC);

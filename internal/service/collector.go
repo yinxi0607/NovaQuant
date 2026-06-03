@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -119,20 +120,7 @@ func (p *BinanceProvider) GetOpenInterest(ctx context.Context, symbol string) (d
 }
 
 func (p *BinanceProvider) getJSON(ctx context.Context, endpoint string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("upstream %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return getJSONWithRetry(ctx, p.client, endpoint, out)
 }
 
 type OKXProvider struct {
@@ -302,20 +290,7 @@ func (p *OKXProvider) GetOpenInterest(ctx context.Context, symbol string) (domai
 }
 
 func (p *OKXProvider) getJSON(ctx context.Context, endpoint string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := p.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("upstream %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return getJSONWithRetry(ctx, p.client, endpoint, out)
 }
 
 func (p *BitgetProvider) GetPrice(ctx context.Context, symbol string) (float64, time.Time, error) {
@@ -434,71 +409,231 @@ func (p *BitgetProvider) GetOpenInterest(ctx context.Context, symbol string) (do
 }
 
 func (p *BitgetProvider) getJSON(ctx context.Context, endpoint string, out any) error {
+	return getJSONWithRetry(ctx, p.client, endpoint, out)
+}
+
+func getJSONWithRetry(ctx context.Context, client *http.Client, endpoint string, out any) error {
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			if err := sleepWithContext(ctx, retryBackoff(attempt)); err != nil {
+				if lastErr != nil {
+					return lastErr
+				}
+				return err
+			}
+		}
+		if err := getJSONOnce(ctx, client, endpoint, out); err != nil {
+			lastErr = err
+			if !isRetryableUpstreamError(err) || attempt == 3 {
+				return err
+			}
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func getJSONOnce(ctx context.Context, client *http.Client, endpoint string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return err
 	}
-	resp, err := p.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
+		if isRetryableTransportError(err) {
+			return &retryableUpstreamError{err: err}
+		}
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("upstream %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		err := fmt.Errorf("upstream %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
+			return &retryableUpstreamError{err: err}
+		}
+		return err
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if isRetryableDecodeError(err) {
+			return &retryableUpstreamError{err: err}
+		}
+		return err
+	}
+	return nil
+}
+
+func isRetryableUpstreamError(err error) bool {
+	var retryable *retryableUpstreamError
+	return errors.As(err, &retryable)
+}
+
+func isRetryableTransportError(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "timeout") ||
+		strings.Contains(message, "connection reset") ||
+		strings.Contains(message, "broken pipe") ||
+		strings.Contains(message, "unexpected eof")
+}
+
+func isRetryableDecodeError(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+func retryBackoff(attempt int) time.Duration {
+	switch attempt {
+	case 2:
+		return 300 * time.Millisecond
+	case 3:
+		return time.Second
+	default:
+		return 0
+	}
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 type Collector struct {
 	repo      *repository.Repository
 	providers []MarketProvider
+	etf       ETFCollector
+	news      NewsCollector
 	metrics   *metrics.Registry
 }
 
-func NewCollector(repo *repository.Repository, providers []MarketProvider, registry *metrics.Registry) *Collector {
-	return &Collector{repo: repo, providers: providers, metrics: registry}
+type partialCollectionError struct {
+	issues []string
+}
+
+func (e *partialCollectionError) Error() string {
+	return strings.Join(e.issues, "; ")
+}
+
+func IsPartialCollectionError(err error) bool {
+	var partialErr *partialCollectionError
+	return errors.As(err, &partialErr)
+}
+
+type retryableUpstreamError struct {
+	err error
+}
+
+func (e *retryableUpstreamError) Error() string {
+	return e.err.Error()
+}
+
+func (e *retryableUpstreamError) Unwrap() error {
+	return e.err
+}
+
+func NewCollector(repo *repository.Repository, providers []MarketProvider, etf ETFCollector, news NewsCollector, registry *metrics.Registry) *Collector {
+	return &Collector{repo: repo, providers: providers, etf: etf, news: news, metrics: registry}
 }
 
 func (c *Collector) RunOnce(ctx context.Context, symbols, intervals []string) error {
+	var issues []string
+	successes := 0
+	seenETFAssets := map[string]bool{}
 	for _, symbol := range symbols {
 		price, ts, spotSource, err := c.fetchPrice(ctx, symbol)
 		if err != nil {
-			return err
-		}
-		if err := c.repo.UpsertPrice(ctx, symbol, price, ts, spotSource); err != nil {
-			return err
-		}
-		if c.metrics != nil {
-			c.metrics.Inc("collector_http_requests_total")
-			c.metrics.Inc("collector_rows_written_total")
+			issues = append(issues, fmt.Sprintf("%s price: %v", symbol, err))
+		} else if err := c.repo.UpsertPrice(ctx, symbol, price, ts, spotSource); err != nil {
+			issues = append(issues, fmt.Sprintf("%s price write: %v", symbol, err))
+		} else {
+			successes++
+			if c.metrics != nil {
+				c.metrics.Inc("collector_http_requests_total")
+				c.metrics.Inc("collector_rows_written_total")
+			}
 		}
 		for _, interval := range intervals {
 			klines, klineSource, err := c.fetchKlines(ctx, symbol, interval, 200)
 			if err != nil {
-				return err
+				issues = append(issues, fmt.Sprintf("%s %s klines: %v", symbol, interval, err))
+				continue
 			}
 			if err := c.repo.UpsertKlines(ctx, klines, klineSource); err != nil {
-				return err
+				issues = append(issues, fmt.Sprintf("%s %s kline write: %v", symbol, interval, err))
+				continue
 			}
+			successes++
 			if c.metrics != nil {
 				c.metrics.Add("collector_rows_written_total", uint64(len(klines)))
 			}
 		}
 		funding, fundingSource, err := c.fetchFundingRates(ctx, symbol, 16)
 		if err != nil {
-			return err
-		}
-		if err := c.repo.UpsertFunding(ctx, funding, fundingSource+"_swap"); err != nil {
-			return err
+			issues = append(issues, fmt.Sprintf("%s funding: %v", symbol, err))
+		} else if err := c.repo.UpsertFunding(ctx, funding, fundingSource+"_swap"); err != nil {
+			issues = append(issues, fmt.Sprintf("%s funding write: %v", symbol, err))
+		} else {
+			successes++
 		}
 		oi, oiSource, err := c.fetchOpenInterest(ctx, symbol)
 		if err != nil {
-			return err
+			issues = append(issues, fmt.Sprintf("%s open interest: %v", symbol, err))
+		} else if err := c.repo.UpsertOpenInterest(ctx, oi, oiSource+"_swap"); err != nil {
+			issues = append(issues, fmt.Sprintf("%s open interest write: %v", symbol, err))
+		} else {
+			successes++
 		}
-		if err := c.repo.UpsertOpenInterest(ctx, oi, oiSource+"_swap"); err != nil {
-			return err
+		asset := strings.TrimSuffix(strings.ToUpper(symbol), "USDT")
+		if c.etf != nil && (asset == "BTC" || asset == "ETH") && !seenETFAssets[asset] {
+			seenETFAssets[asset] = true
+			rows, providerName, err := c.etf.GetSummaryHistory(ctx, asset)
+			if err != nil {
+				issues = append(issues, fmt.Sprintf("%s etf: %v", asset, err))
+			} else if err := c.repo.UpsertETFFlows(ctx, rows); err != nil {
+				issues = append(issues, fmt.Sprintf("%s etf write: %v", asset, err))
+			} else {
+				successes++
+				if c.metrics != nil {
+					c.metrics.Add("collector_rows_written_total", uint64(len(rows)))
+				}
+				_ = providerName
+			}
 		}
+	}
+	if c.news != nil {
+		rows, _, err := c.news.GetLatest(ctx, 50)
+		if err != nil {
+			issues = append(issues, fmt.Sprintf("news: %v", err))
+		} else if err := c.repo.UpsertNewsItems(ctx, rows); err != nil {
+			issues = append(issues, fmt.Sprintf("news write: %v", err))
+		} else {
+			successes++
+			if c.metrics != nil {
+				c.metrics.Add("collector_rows_written_total", uint64(len(rows)))
+			}
+		}
+	}
+	if len(issues) > 0 {
+		if successes > 0 {
+			return &partialCollectionError{issues: issues}
+		}
+		return errors.New(strings.Join(issues, "; "))
 	}
 	return nil
 }

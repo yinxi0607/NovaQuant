@@ -10,7 +10,7 @@ import { NewsPage } from "./pages/NewsPage";
 import { StrategyPage } from "./pages/StrategyPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
-import { AuthSession, apiGet } from "./lib/api";
+import { APIError, AuthSession, apiGet } from "./lib/api";
 import { AUTH_ENABLED, clearAuth, getStoredToken, getStoredUser, storeAuth } from "./lib/auth";
 
 const links = [
@@ -24,13 +24,20 @@ const links = [
   { to: "/settings", label: "Settings" },
 ];
 
+const detailLinks = [
+  { to: "/symbols/BTCUSDT", label: "BTC Detail" },
+  { to: "/symbols/ETHUSDT", label: "ETH Detail" },
+  { to: "/symbols/SOLUSDT", label: "SOL Detail" },
+];
+
 export default function App() {
   const [session, setSession] = useState<AuthSession | null>(() => {
     if (!AUTH_ENABLED) {
       return { username: "guest", expires_at: "" };
     }
+    const token = getStoredToken();
     const username = getStoredUser();
-    return username ? { username, expires_at: "" } : null;
+    return token && username ? { username, expires_at: "" } : null;
   });
   const [bootstrapping, setBootstrapping] = useState(AUTH_ENABLED);
 
@@ -41,14 +48,18 @@ export default function App() {
     }
     const token = getStoredToken();
     if (!token) {
+      clearAuth();
+      setSession(null);
       setBootstrapping(false);
       return;
     }
     apiGet<AuthSession>("/auth/session")
       .then((data) => setSession(data))
-      .catch(() => {
-        clearAuth();
-        setSession(null);
+      .catch((reason) => {
+        if (reason instanceof APIError && reason.status === 401) {
+          clearAuth();
+          setSession(null);
+        }
       })
       .finally(() => setBootstrapping(false));
   }, []);
@@ -102,9 +113,11 @@ export default function App() {
               {link.label}
             </NavLink>
           ))}
-          <NavLink to="/symbols/BTCUSDT" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-            BTC Detail
-          </NavLink>
+          {detailLinks.map((link) => (
+            <NavLink key={link.to} to={link.to} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+              {link.label}
+            </NavLink>
+          ))}
         </nav>
       </aside>
       <main className="content">

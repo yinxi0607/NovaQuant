@@ -1,39 +1,29 @@
-import { API_BASE, AuthConfig, AuthLoginResponse, AuthSession } from "./api";
-
-const AUTH_TOKEN_KEY = "novaquant.auth.token";
-const AUTH_USER_KEY = "novaquant.auth.user";
+import { API_BASE, APIError, AuthConfig, AuthLoginResponse, AuthSession } from "./api";
+import { clearAuthState, readAuthToken, readAuthUser, writeAuthState } from "./authStore";
 
 export const AUTH_ENABLED =
   import.meta.env.MODE !== "test" && (import.meta.env.VITE_AUTH_ENABLED ?? "false") === "true";
 
 export function getStoredToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return window.localStorage.getItem(AUTH_TOKEN_KEY);
+  return readAuthToken();
 }
 
 export function getStoredUser(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  return window.localStorage.getItem(AUTH_USER_KEY);
+  return readAuthUser();
 }
 
 export function storeAuth(token: string, session: AuthSession) {
-  window.localStorage.setItem(AUTH_TOKEN_KEY, token);
-  window.localStorage.setItem(AUTH_USER_KEY, session.username);
+  writeAuthState(token, session.username);
 }
 
 export function clearAuth() {
-  window.localStorage.removeItem(AUTH_TOKEN_KEY);
-  window.localStorage.removeItem(AUTH_USER_KEY);
+  clearAuthState();
 }
 
 export async function fetchAuthConfig(): Promise<AuthConfig> {
   const response = await fetch(`${API_BASE}/auth/config`);
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new APIError(response.status, await response.text());
   }
   return response.json() as Promise<AuthConfig>;
 }
@@ -57,7 +47,7 @@ export async function login(username: string, password: string): Promise<AuthLog
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new APIError(response.status, await response.text());
   }
   return response.json() as Promise<AuthLoginResponse>;
 }

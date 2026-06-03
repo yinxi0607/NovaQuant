@@ -28,6 +28,9 @@ type Config struct {
 	BinanceFuturesURL   string
 	OKXBaseURL          string
 	BitgetBaseURL       string
+	SoSoBaseURL         string
+	SoSoAPIKey          string
+	ETFCountryCode      string
 	DefaultSymbols      []string
 	CollectionIntervals []string
 	NewsRSSURLs         []string
@@ -63,6 +66,9 @@ func Load() Config {
 		BinanceFuturesURL:   getenv("BINANCE_FUTURES_BASE_URL", "https://fapi.binance.com"),
 		OKXBaseURL:          getenv("OKX_BASE_URL", "https://www.okx.com"),
 		BitgetBaseURL:       getenv("BITGET_BASE_URL", "https://api.bitget.com"),
+		SoSoBaseURL:         getenv("SOSO_BASE_URL", "https://openapi.sosovalue.com"),
+		SoSoAPIKey:          os.Getenv("SOSO_ETF_API_KEY"),
+		ETFCountryCode:      strings.ToUpper(getenv("ETF_COUNTRY_CODE", "US")),
 		DefaultSymbols:      splitCSV(getenv("DEFAULT_SYMBOLS", "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,DOGEUSDT")),
 		CollectionIntervals: splitCSV(getenv("COLLECTION_INTERVALS", "1m,5m,15m,1h,4h,1d")),
 		NewsRSSURLs:         splitCSV(getenv("NEWS_RSS_URLS", "")),

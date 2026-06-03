@@ -1,26 +1,28 @@
+import { readAuthToken } from "./authStore";
 export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:50800/api/v1";
-const AUTH_TOKEN_KEY = "novaquant.auth.token";
 
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") {
-    return null;
+export class APIError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
   }
-  return window.localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const token = getStoredToken();
+  const token = readAuthToken();
   const response = await fetch(`${API_BASE}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new APIError(response.status, await response.text());
   }
   return response.json() as Promise<T>;
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const token = getStoredToken();
+  const token = readAuthToken();
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
@@ -30,7 +32,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw new APIError(response.status, await response.text());
   }
   return response.json() as Promise<T>;
 }

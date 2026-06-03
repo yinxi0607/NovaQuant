@@ -81,20 +81,20 @@ func (r *Repository) GetMarketOverview(ctx context.Context, symbols []string) ([
 		       COALESCE(a.ts, lk.close_time, now()) AS updated_at,
 		       COALESCE(a.market_regime, 'unknown') AS market_phase
 		FROM symbols s
-		LEFT JOIN LATERAL (
-		    SELECT price::double precision AS price, ts
-		    FROM market_price
-		    WHERE symbol = s.symbol
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) lp ON true
-		LEFT JOIN LATERAL (
-		    SELECT close::double precision AS close, close_time
-		    FROM market_kline
-		    WHERE symbol = s.symbol AND interval = '1h'
-		    ORDER BY close_time DESC
-		    LIMIT 1
-		) lk ON true
+			LEFT JOIN LATERAL (
+			    SELECT price::double precision AS price, ts
+			    FROM market_price
+			    WHERE symbol = s.symbol AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) lp ON true
+			LEFT JOIN LATERAL (
+			    SELECT close::double precision AS close, close_time
+			    FROM market_kline
+			    WHERE symbol = s.symbol AND interval = '1h' AND close_time <= now()
+			    ORDER BY close_time DESC
+			    LIMIT 1
+			) lk ON true
 		LEFT JOIN LATERAL (
 		    SELECT close::double precision AS close
 		    FROM market_kline
@@ -102,20 +102,20 @@ func (r *Repository) GetMarketOverview(ctx context.Context, symbols []string) ([
 		    ORDER BY close_time DESC
 		    LIMIT 1
 		) prev ON true
-		LEFT JOIN LATERAL (
-		    SELECT trend, market_regime, risk_level, ts
-		    FROM market_analysis
-		    WHERE symbol = s.symbol AND interval = '1h'
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) a ON true
-		LEFT JOIN LATERAL (
-		    SELECT total_score
-		    FROM market_risk
-		    WHERE symbol = s.symbol
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) r ON true
+			LEFT JOIN LATERAL (
+			    SELECT trend, market_regime, risk_level, ts
+			    FROM market_analysis
+			    WHERE symbol = s.symbol AND interval = '1h' AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) a ON true
+			LEFT JOIN LATERAL (
+			    SELECT total_score
+			    FROM market_risk
+			    WHERE symbol = s.symbol AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) r ON true
 		WHERE s.enabled = true
 	`
 	args := []any{}
@@ -160,20 +160,20 @@ func (r *Repository) GetMarketSnapshot(ctx context.Context, symbol string) (doma
 		       COALESCE(a.market_regime, 'unknown'),
 		       COALESCE(lk.close_time, now()) AS latest_kline_ts
 		FROM symbols s
-		LEFT JOIN LATERAL (
-		    SELECT price::double precision AS price, ts
-		    FROM market_price
-		    WHERE symbol = s.symbol
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) lp ON true
-		LEFT JOIN LATERAL (
-		    SELECT close::double precision AS close, close_time
-		    FROM market_kline
-		    WHERE symbol = s.symbol AND interval = '1h'
-		    ORDER BY close_time DESC
-		    LIMIT 1
-		) lk ON true
+			LEFT JOIN LATERAL (
+			    SELECT price::double precision AS price, ts
+			    FROM market_price
+			    WHERE symbol = s.symbol AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) lp ON true
+			LEFT JOIN LATERAL (
+			    SELECT close::double precision AS close, close_time
+			    FROM market_kline
+			    WHERE symbol = s.symbol AND interval = '1h' AND close_time <= now()
+			    ORDER BY close_time DESC
+			    LIMIT 1
+			) lk ON true
 		LEFT JOIN LATERAL (
 		    SELECT close::double precision AS close
 		    FROM market_kline
@@ -181,34 +181,34 @@ func (r *Repository) GetMarketSnapshot(ctx context.Context, symbol string) (doma
 		    ORDER BY close_time DESC
 		    LIMIT 1
 		) prev ON true
-		LEFT JOIN LATERAL (
-		    SELECT funding_rate::double precision AS funding_rate
-		    FROM market_funding
-		    WHERE symbol = s.symbol
-		    ORDER BY funding_time DESC
-		    LIMIT 1
-		) f ON true
-		LEFT JOIN LATERAL (
-		    SELECT open_interest::double precision AS open_interest
-		    FROM market_open_interest
-		    WHERE symbol = s.symbol
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) oi ON true
-		LEFT JOIN LATERAL (
-		    SELECT trend, market_regime, risk_level, ts, support_levels, resistance_levels, summary
-		    FROM market_analysis
-		    WHERE symbol = s.symbol AND interval = '1h'
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) a ON true
-		LEFT JOIN LATERAL (
-		    SELECT total_score
-		    FROM market_risk
-		    WHERE symbol = s.symbol
-		    ORDER BY ts DESC
-		    LIMIT 1
-		) r ON true
+			LEFT JOIN LATERAL (
+			    SELECT funding_rate::double precision AS funding_rate
+			    FROM market_funding
+			    WHERE symbol = s.symbol AND funding_time <= now()
+			    ORDER BY funding_time DESC
+			    LIMIT 1
+			) f ON true
+			LEFT JOIN LATERAL (
+			    SELECT open_interest::double precision AS open_interest
+			    FROM market_open_interest
+			    WHERE symbol = s.symbol AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) oi ON true
+			LEFT JOIN LATERAL (
+			    SELECT trend, market_regime, risk_level, ts, support_levels, resistance_levels, summary
+			    FROM market_analysis
+			    WHERE symbol = s.symbol AND interval = '1h' AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) a ON true
+			LEFT JOIN LATERAL (
+			    SELECT total_score
+			    FROM market_risk
+			    WHERE symbol = s.symbol AND ts <= now()
+			    ORDER BY ts DESC
+			    LIMIT 1
+			) r ON true
 		WHERE s.symbol = $1
 	`, symbol)
 
@@ -247,7 +247,7 @@ func (r *Repository) ListKlines(ctx context.Context, symbol, interval string, li
 		FROM (
 		    SELECT *
 		    FROM market_kline
-		    WHERE symbol = $1 AND interval = $2
+		    WHERE symbol = $1 AND interval = $2 AND open_time <= now()
 		    ORDER BY open_time DESC
 		    LIMIT $3
 		) q
@@ -266,7 +266,7 @@ func (r *Repository) ListKlinesBetween(ctx context.Context, symbol, interval str
 		       open::double precision, high::double precision, low::double precision, close::double precision,
 		       volume::double precision, COALESCE(quote_volume, 0)::double precision, COALESCE(trades, 0)
 		FROM market_kline
-		WHERE symbol = $1 AND interval = $2 AND open_time >= $3 AND close_time <= $4
+		WHERE symbol = $1 AND interval = $2 AND open_time >= $3 AND close_time <= $4 AND open_time <= now()
 		ORDER BY open_time ASC
 	`, symbol, interval, start, end)
 	if err != nil {
@@ -278,12 +278,12 @@ func (r *Repository) ListKlinesBetween(ctx context.Context, symbol, interval str
 
 func (r *Repository) ListRecentFunding(ctx context.Context, symbol string, limit int) ([]domain.FundingRate, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT symbol, funding_rate::double precision, funding_time
-		FROM market_funding
-		WHERE symbol = $1
-		ORDER BY funding_time DESC
-		LIMIT $2
-	`, symbol, limit)
+			SELECT symbol, funding_rate::double precision, funding_time
+			FROM market_funding
+			WHERE symbol = $1 AND funding_time <= now()
+			ORDER BY funding_time DESC
+			LIMIT $2
+		`, symbol, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -302,12 +302,12 @@ func (r *Repository) ListRecentFunding(ctx context.Context, symbol string, limit
 
 func (r *Repository) ListRecentOpenInterest(ctx context.Context, symbol string, limit int) ([]domain.OpenInterest, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT symbol, open_interest::double precision, ts
-		FROM market_open_interest
-		WHERE symbol = $1
-		ORDER BY ts DESC
-		LIMIT $2
-	`, symbol, limit)
+			SELECT symbol, open_interest::double precision, ts
+			FROM market_open_interest
+			WHERE symbol = $1 AND ts <= now()
+			ORDER BY ts DESC
+			LIMIT $2
+		`, symbol, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -326,28 +326,28 @@ func (r *Repository) ListRecentOpenInterest(ctx context.Context, symbol string, 
 
 func (r *Repository) GetLatestAnalysis(ctx context.Context, symbol, interval string) (domain.Analysis, error) {
 	row := r.pool.QueryRow(ctx, `
-		SELECT symbol, interval, ts, trend, market_regime, risk_level, risk_score,
-		       rsi14::double precision, macd::double precision, macd_signal::double precision, macd_hist::double precision,
-		       ema20::double precision, ema60::double precision, ema200::double precision, atr14::double precision,
-		       bb_upper::double precision, bb_middle::double precision, bb_lower::double precision,
-		       support_levels, resistance_levels, summary
-		FROM market_analysis
-		WHERE symbol = $1 AND interval = $2
-		ORDER BY ts DESC
-		LIMIT 1
-	`, symbol, interval)
+			SELECT symbol, interval, ts, trend, market_regime, risk_level, risk_score,
+			       rsi14::double precision, macd::double precision, macd_signal::double precision, macd_hist::double precision,
+			       ema20::double precision, ema60::double precision, ema200::double precision, atr14::double precision,
+			       bb_upper::double precision, bb_middle::double precision, bb_lower::double precision,
+			       support_levels, resistance_levels, summary
+			FROM market_analysis
+			WHERE symbol = $1 AND interval = $2 AND ts <= now()
+			ORDER BY ts DESC
+			LIMIT 1
+		`, symbol, interval)
 
 	return scanAnalysisRow(row)
 }
 
 func (r *Repository) GetLatestRisk(ctx context.Context, symbol string) (domain.Risk, error) {
 	row := r.pool.QueryRow(ctx, `
-		SELECT symbol, ts, total_score, rsi_score, funding_score, oi_score, volatility_score, volume_score, news_score, explanation
-		FROM market_risk
-		WHERE symbol = $1
-		ORDER BY ts DESC
-		LIMIT 1
-	`, symbol)
+			SELECT symbol, ts, total_score, rsi_score, funding_score, oi_score, volatility_score, volume_score, news_score, explanation
+			FROM market_risk
+			WHERE symbol = $1 AND ts <= now()
+			ORDER BY ts DESC
+			LIMIT 1
+		`, symbol)
 
 	var item domain.Risk
 	var explanationRaw []byte
@@ -406,9 +406,24 @@ func (r *Repository) ListNews(ctx context.Context, symbol string, limit int) ([]
 
 func (r *Repository) ListETFFlows(ctx context.Context, asset string, limit int) ([]domain.ETFFlow, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, asset, provider, flow_date, net_flow_usd::double precision, COALESCE(total_volume_usd, 0)::double precision, COALESCE(note, '')
-		FROM etf_flows
-		WHERE $1 = '' OR asset = $1
+		WITH ranked AS (
+			SELECT id::text,
+			       asset,
+			       provider,
+			       flow_date,
+			       net_flow_usd::double precision AS net_flow_usd,
+			       COALESCE(total_volume_usd, 0)::double precision AS total_volume_usd,
+			       COALESCE(note, '') AS note,
+			       ROW_NUMBER() OVER (
+			           PARTITION BY asset, flow_date
+			           ORDER BY CASE WHEN provider = 'seed' THEN 1 ELSE 0 END, created_at DESC
+			       ) AS rn
+			FROM etf_flows
+			WHERE $1 = '' OR asset = $1
+		)
+		SELECT id, asset, provider, flow_date, net_flow_usd, total_volume_usd, note
+		FROM ranked
+		WHERE rn = 1
 		ORDER BY flow_date DESC
 		LIMIT $2
 	`, strings.ToUpper(asset), limit)
@@ -658,6 +673,56 @@ func (r *Repository) UpsertRisk(ctx context.Context, item domain.Risk) error {
 		    created_at = now()
 	`, item.Symbol, item.TS, item.TotalScore, item.RSIScore, item.FundingScore, item.OIScore, item.VolatilityScore, item.VolumeScore, item.NewsScore, explanationRaw)
 	return err
+}
+
+func (r *Repository) UpsertETFFlows(ctx context.Context, rows []domain.ETFFlow) error {
+	batch := &pgx.Batch{}
+	for _, item := range rows {
+		batch.Queue(`
+			INSERT INTO etf_flows(asset, provider, flow_date, net_flow_usd, total_volume_usd, note)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT(asset, provider, flow_date) DO UPDATE
+			SET net_flow_usd = EXCLUDED.net_flow_usd,
+			    total_volume_usd = EXCLUDED.total_volume_usd,
+			    note = EXCLUDED.note,
+			    created_at = now()
+		`, item.Asset, item.Provider, item.FlowDate, item.NetFlowUSD, item.TotalVolumeUSD, item.Note)
+	}
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range rows {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Repository) UpsertNewsItems(ctx context.Context, rows []domain.NewsItem) error {
+	batch := &pgx.Batch{}
+	for _, item := range rows {
+		batch.Queue(`
+			INSERT INTO news_items(source, title, url, published_at, related_symbols, sentiment, sentiment_score, summary)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT(url) DO UPDATE
+			SET source = EXCLUDED.source,
+			    title = EXCLUDED.title,
+			    published_at = EXCLUDED.published_at,
+			    related_symbols = EXCLUDED.related_symbols,
+			    sentiment = EXCLUDED.sentiment,
+			    sentiment_score = EXCLUDED.sentiment_score,
+			    summary = EXCLUDED.summary,
+			    created_at = now()
+		`, item.Source, item.Title, item.URL, item.PublishedAt, item.RelatedSymbols, item.Sentiment, item.SentimentScore, item.Summary)
+	}
+	br := r.pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for range rows {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) EnsureAgentSession(ctx context.Context, sessionID, title string) (string, error) {

@@ -1,4 +1,18 @@
 services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_DB: ${DOCKER_POSTGRES_DB:-novaquant}
+      POSTGRES_USER: ${DOCKER_POSTGRES_USER:-novaquant}
+      POSTGRES_PASSWORD: ${DOCKER_POSTGRES_PASSWORD:-password}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DOCKER_POSTGRES_USER:-novaquant} -d ${DOCKER_POSTGRES_DB:-novaquant}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   redis:
     image: redis:7-alpine
 
@@ -10,10 +24,11 @@ services:
         SERVICE: migrate
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: "no"
 
   seed:
@@ -24,13 +39,41 @@ services:
         SERVICE: seed
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       migrate:
         condition: service_completed_successfully
+    restart: "no"
+
+  checkdata:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: checkdata
+    env_file: .env
+    environment:
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  mcp-db:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: mcp-db
+    env_file: .env
+    environment:
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
+      REDIS_URL: ${DOCKER_REDIS_URL}
+    depends_on:
+      db:
+        condition: service_healthy
     restart: "no"
 
   api:
@@ -41,10 +84,8 @@ services:
         SERVICE: api
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_started
@@ -66,10 +107,8 @@ services:
         SERVICE: agent
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy
@@ -89,10 +128,8 @@ services:
         SERVICE: collector
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy
@@ -112,10 +149,8 @@ services:
         SERVICE: analyzer
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy
@@ -135,10 +170,8 @@ services:
         SERVICE: alerts
     env_file: .env
     environment:
-      PG_DSN: ${DOCKER_PG_DSN}
+      PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       api:
         condition: service_healthy
@@ -169,13 +202,5 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-
-  db:
-    image: timescale/timescaledb:latest-pg16
-    profiles: ["db"]
-    environment:
-      POSTGRES_DB: novaquant
-      POSTGRES_USER: novaquant
-      POSTGRES_PASSWORD: password
-    ports:
-      - "5432:5432"
+volumes:
+  db_data:

@@ -121,6 +121,10 @@ func withAuth(next http.Handler, auth *service.AuthService, publicPaths map[stri
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if publicPaths[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return

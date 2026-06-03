@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { NavLink, useParams } from "react-router-dom";
 import { EChart } from "../components/EChart";
 import { MetricGrid } from "../components/MetricGrid";
 import { Panel } from "../components/Panel";
 import { Analysis, Kline, Risk, Snapshot, apiGet } from "../lib/api";
+
+const detailSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] as const;
 
 export function SymbolPage() {
   const { symbol = "BTCUSDT" } = useParams();
@@ -44,6 +46,17 @@ export function SymbolPage() {
   return (
     <div className="page-grid">
       <Panel title={`${symbol} Snapshot`} subtitle="实时快照与研究摘要">
+        <div className="tag-row">
+          {detailSymbols.map((item) => (
+            <NavLink
+              key={item}
+              to={`/symbols/${item}`}
+              className={({ isActive }) => `price-tag ${isActive ? "bull-tag" : ""}`}
+            >
+              {item}
+            </NavLink>
+          ))}
+        </div>
         {snapshot ? (
           <MetricGrid
             items={[

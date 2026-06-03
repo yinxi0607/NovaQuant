@@ -86,17 +86,18 @@ func (s *Server) Handler() http.Handler {
 		_, _ = w.Write([]byte("OpenAPI is generated into docs/openapi.yaml in this scaffold."))
 	})
 
-	handler := withRequestID(mux)
-	handler = withRecover(handler, s.logger, s.metrics)
-	handler = withCORS(handler)
-	handler = withLogging(handler, s.logger, s.metrics)
-	handler = withRateLimit(handler, newRateLimiter(120))
+	handler := http.Handler(mux)
 	handler = withAuth(handler, s.auth, map[string]bool{
 		"/api/v1/health":          true,
 		"/api/v1/auth/config":     true,
 		"/api/v1/auth/public-key": true,
 		"/api/v1/auth/login":      true,
 	})
+	handler = withRateLimit(handler, newRateLimiter(120))
+	handler = withLogging(handler, s.logger, s.metrics)
+	handler = withRecover(handler, s.logger, s.metrics)
+	handler = withCORS(handler)
+	handler = withRequestID(handler)
 	return handler
 }
 

@@ -47,26 +47,47 @@ export function OverviewPage() {
   const [assetViews, setAssetViews] = useState<AssetView[]>([]);
   const [monthlySeries, setMonthlySeries] = useState<Record<string, Kline[]>>({});
   const [etfSummaries, setEtfSummaries] = useState<EtfSummary[]>([]);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     async function load() {
-      const [overview, newsData, ...etfResponses] = await Promise.all([
+      const errors: string[] = [];
+      const [overviewResult, newsResult, btcEtfResult, ethEtfResult] = await Promise.allSettled([
         apiGet<{ cards: OverviewCard[] }>("/market/overview"),
         apiGet<{ news: NewsItem[] }>("/news?page_size=4"),
         apiGet<{ flows: ETFFlow[] }>("/etf?asset=BTC&page_size=30"),
         apiGet<{ flows: ETFFlow[] }>("/etf?asset=ETH&page_size=30"),
       ]);
 
-      setCards(overview.cards.filter((card) => focusSymbols.includes(card.symbol as (typeof focusSymbols)[number])));
-      setNews(newsData.news);
-      setEtfSummaries([
-        summarizeEtf("BTC", etfResponses[0].flows),
-        summarizeEtf("ETH", etfResponses[1].flows),
-      ]);
+      if (overviewResult.status === "fulfilled") {
+        setCards(overviewResult.value.cards.filter((card) => focusSymbols.includes(card.symbol as (typeof focusSymbols)[number])));
+      } else {
+        errors.push("market overview unavailable");
+      }
+      if (newsResult.status === "fulfilled") {
+        setNews(newsResult.value.news);
+      } else {
+        errors.push("news unavailable");
+      }
 
-      const views = await Promise.all(
+      const etfItems: EtfSummary[] = [];
+      if (btcEtfResult.status === "fulfilled") {
+        etfItems.push(summarizeEtf("BTC", btcEtfResult.value.flows));
+      } else {
+        errors.push("BTC ETF unavailable");
+      }
+      if (ethEtfResult.status === "fulfilled") {
+        etfItems.push(summarizeEtf("ETH", ethEtfResult.value.flows));
+      } else {
+        errors.push("ETH ETF unavailable");
+      }
+      setEtfSummaries(etfItems);
+
+      const monthlyNext: Record<string, Kline[]> = {};
+      const views = (
+        await Promise.all(
         focusSymbols.map(async (symbol) => {
-          const [snapshot, dayAnalysis, weekAnalysis, monthAnalysis, hourKlines, fourHourKlines, dayKlines, ai] = await Promise.all([
+          const [snapshotResult, dayAnalysisResult, weekAnalysisResult, monthAnalysisResult, hourKlinesResult, fourHourKlinesResult, dayKlinesResult, aiResult] = await Promise.allSettled([
             apiGet<Snapshot>(`/market/${symbol}`),
             apiGet<Analysis>(`/analysis/${symbol}?interval=1h`),
             apiGet<Analysis>(`/analysis/${symbol}?interval=4h`),
@@ -81,6 +102,37 @@ export function OverviewPage() {
             }),
           ]);
 
+          if (
+            snapshotResult.status !== "fulfilled" ||
+            dayAnalysisResult.status !== "fulfilled" ||
+            weekAnalysisResult.status !== "fulfilled" ||
+            monthAnalysisResult.status !== "fulfilled" ||
+            hourKlinesResult.status !== "fulfilled" ||
+            fourHourKlinesResult.status !== "fulfilled" ||
+            dayKlinesResult.status !== "fulfilled"
+          ) {
+            errors.push(`${symbol} core data unavailable`);
+            return null;
+          }
+
+          const snapshot = snapshotResult.value;
+          const dayAnalysis = dayAnalysisResult.value;
+          const weekAnalysis = weekAnalysisResult.value;
+          const monthAnalysis = monthAnalysisResult.value;
+          const hourKlines = hourKlinesResult.value;
+          const fourHourKlines = fourHourKlinesResult.value;
+          const dayKlines = dayKlinesResult.value;
+          monthlyNext[symbol] = dayKlines.ohlcv;
+
+          const ai =
+            aiResult.status === "fulfilled"
+              ? aiResult.value
+              : fallbackAgentResponse(symbol, dayAnalysis, weekAnalysis, monthAnalysis);
+
+          if (aiResult.status !== "fulfilled") {
+            errors.push(`${symbol} AI brief unavailable`);
+          }
+
           return {
             symbol,
             snapshot,
@@ -90,17 +142,17 @@ export function OverviewPage() {
             ai,
           } satisfies AssetView;
         }),
-      );
+        )
+      ).filter(Boolean) as AssetView[];
 
       setAssetViews(views);
-      setMonthlySeries({
-        BTCUSDT: await apiGet<{ ohlcv: Kline[] }>("/klines/BTCUSDT?interval=1d&limit=30").then((data) => data.ohlcv),
-        ETHUSDT: await apiGet<{ ohlcv: Kline[] }>("/klines/ETHUSDT?interval=1d&limit=30").then((data) => data.ohlcv),
-      });
+      setMonthlySeries(monthlyNext);
+      setLoadError(errors.join(" | "));
     }
 
     load().catch((error) => {
       console.error(error);
+      setLoadError(error instanceof Error ? error.message : "dashboard load failed");
     });
   }, []);
 
@@ -147,6 +199,7 @@ export function OverviewPage() {
 
   return (
     <div className="page-grid">
+      {loadError ? <p className="error-banner">{loadError}</p> : null}
       <Panel title="BTC / ETH Trend Matrix" subtitle="日、周、月多周期趋势">
         <MetricGrid items={topMetrics} />
         <div className="focus-grid">
@@ -285,4 +338,16 @@ function formatUSD(value: number): string {
     notation: "compact",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function fallbackAgentResponse(symbol: string, day: Analysis, week: Analysis, month: Analysis): AgentResponse {
+  return {
+    answer: `${symbol} AI 摘要暂时不可用，先参考当前结构化分析结果。日线 ${day.trend}，周线 ${week.trend}，月线 ${month.trend}。`,
+    trend: day.trend,
+    risk_level: day.risk_level,
+    support: month.support_levels,
+    resistance: month.resistance_levels,
+    evidence: [],
+    data_timestamp: day.ts,
+  };
 }

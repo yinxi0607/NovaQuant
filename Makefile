@@ -13,16 +13,20 @@ dev:
 	docker compose --env-file .env up --build api agent web redis
 
 migrate:
-	go run ./cmd/migrate
+	docker compose --env-file .env build migrate
+	docker compose --env-file .env run --rm migrate
 
 seed:
-	go run ./cmd/seed
+	docker compose --env-file .env build seed
+	docker compose --env-file .env run --rm seed
 
 check-data:
-	go run ./cmd/checkdata
+	docker compose --env-file .env build checkdata
+	docker compose --env-file .env run --rm checkdata
 
 mcp-db:
-	go run ./cmd/mcp-db
+	docker compose --env-file .env build mcp-db
+	docker compose --env-file .env run --rm mcp-db
 
 test:
 	$(MAKE) test-go

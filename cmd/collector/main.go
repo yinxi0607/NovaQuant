@@ -32,7 +32,8 @@ func main() {
 		go serveWorkerHTTP(":"+cfg.CollectorPort, registry)
 		select {}
 	}
-	providers, err := service.NewMarketProviders(cfg, &http.Client{Timeout: cfg.HTTPTimeout})
+	httpClient := &http.Client{Timeout: cfg.HTTPTimeout}
+	providers, err := service.NewMarketProviders(cfg, httpClient)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,7 +42,19 @@ func main() {
 		providerNames = append(providerNames, provider.Name())
 	}
 	logger.Info("collector providers configured", "providers", providerNames)
-	collector := service.NewCollector(repo, providers, registry)
+	etfCollector := service.NewETFCollector(cfg, httpClient)
+	if etfCollector == nil {
+		logger.Info("etf collector disabled", "reason", "SOSO_ETF_API_KEY not configured")
+	} else {
+		logger.Info("etf collector configured", "provider", "soso", "country_code", cfg.ETFCountryCode)
+	}
+	newsCollector := service.NewNewsCollector(cfg, httpClient)
+	if newsCollector == nil {
+		logger.Info("news collector disabled", "reason", "SOSO_ETF_API_KEY not configured")
+	} else {
+		logger.Info("news collector configured", "provider", "soso")
+	}
+	collector := service.NewCollector(repo, providers, etfCollector, newsCollector, registry)
 
 	go serveWorkerHTTP(":"+cfg.CollectorPort, registry)
 	ticker := time.NewTicker(cfg.ServiceTick)
@@ -52,7 +65,11 @@ func main() {
 		if err != nil {
 			logger.Error("load symbols", "error", err)
 		} else if err := collector.RunOnce(ctx, symbols, cfg.CollectionIntervals); err != nil {
-			logger.Error("collector cycle failed", "error", err)
+			if service.IsPartialCollectionError(err) {
+				logger.Warn("collector cycle completed with partial failures", "error", err)
+			} else {
+				logger.Error("collector cycle failed", "error", err)
+			}
 		}
 		<-ticker.C
 	}

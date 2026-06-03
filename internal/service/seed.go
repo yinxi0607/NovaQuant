@@ -97,8 +97,9 @@ func syntheticSeries(symbol string, offset int) seededSeries {
 	if base == 0 {
 		base = 100
 	}
+	// Keep the latest seeded candle fully closed at the current hour boundary.
 	now := time.Now().UTC().Truncate(time.Hour)
-	start := now.Add(-(24*90 - 1) * time.Hour)
+	start := now.Add(-24 * 90 * time.Hour)
 	klines := make([]domain.Kline, 0, 24*90)
 	funding := make([]domain.FundingRate, 0, 24*90/8)
 	oi := make([]domain.OpenInterest, 0, 24*90/6)
