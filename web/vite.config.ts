@@ -10,6 +10,9 @@ export default defineConfig(({ mode }) => {
       host: "0.0.0.0",
       port: Number(env.WEB_PORT ?? "51740"),
     },
+    preview: {
+      allowedHosts: ["nova-quant.wjxconline.com"],
+    },
     test: {
       globals: true,
       environment: "jsdom",

@@ -188,7 +188,7 @@ services:
       context: .
       dockerfile: web/Dockerfile
       args:
-        VITE_API_BASE_URL: http://127.0.0.1:${API_PORT}/api/v1
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
         VITE_AUTH_ENABLED: ${VITE_AUTH_ENABLED}
     env_file: .env
     depends_on:
