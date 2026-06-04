@@ -12,28 +12,9 @@ import (
 )
 
 func SeedDemoData(ctx context.Context, repo *repository.Repository, symbols []string) error {
-	for i, symbol := range symbols {
-		base := strings.TrimSuffix(symbol, "USDT")
-		if _, err := repo.Pool().Exec(ctx, `
-			INSERT INTO symbols(symbol, base_asset, quote_asset, market_type, sort_order)
-			VALUES ($1, $2, 'USDT', 'spot', $3)
-			ON CONFLICT(symbol) DO UPDATE SET enabled = true, updated_at = now()
-		`, symbol, base, i+1); err != nil {
-			return err
-		}
-	}
-
-	if _, err := repo.Pool().Exec(ctx, `
-		INSERT INTO alert_rules(name, symbol, rule_type, operator, threshold, cooldown_seconds)
-		VALUES
-		    ('BTC RSI Overheated', 'BTCUSDT', 'rsi', '>', 80, 1800),
-		    ('ETH RSI Oversold', 'ETHUSDT', 'rsi', '<', 20, 1800),
-		    ('BTC Risk High', 'BTCUSDT', 'risk_score', '>', 80, 3600)
-		ON CONFLICT DO NOTHING
-	`); err != nil {
+	if err := EnsureDefaultData(ctx, repo, symbols); err != nil {
 		return err
 	}
-
 	analyzer := NewAnalyzer(repo, nil)
 	for idx, symbol := range symbols {
 		series := syntheticSeries(symbol, idx)
@@ -77,6 +58,31 @@ func SeedDemoData(ctx context.Context, repo *repository.Repository, symbols []st
 
 	alerts := NewAlerts(repo, nil)
 	return alerts.RunOnce(ctx)
+}
+
+func EnsureDefaultData(ctx context.Context, repo *repository.Repository, symbols []string) error {
+	for i, symbol := range symbols {
+		base := strings.TrimSuffix(symbol, "USDT")
+		if _, err := repo.Pool().Exec(ctx, `
+			INSERT INTO symbols(symbol, base_asset, quote_asset, market_type, sort_order)
+			VALUES ($1, $2, 'USDT', 'spot', $3)
+			ON CONFLICT(symbol) DO UPDATE SET enabled = true, updated_at = now()
+		`, symbol, base, i+1); err != nil {
+			return err
+		}
+	}
+
+	if _, err := repo.Pool().Exec(ctx, `
+		INSERT INTO alert_rules(name, symbol, rule_type, operator, threshold, cooldown_seconds)
+		VALUES
+		    ('BTC RSI Overheated', 'BTCUSDT', 'rsi', '>', 80, 1800),
+		    ('ETH RSI Oversold', 'ETHUSDT', 'rsi', '<', 20, 1800),
+		    ('BTC Risk High', 'BTCUSDT', 'risk_score', '>', 80, 3600)
+		ON CONFLICT DO NOTHING
+	`); err != nil {
+		return err
+	}
+	return nil
 }
 
 type seededSeries struct {

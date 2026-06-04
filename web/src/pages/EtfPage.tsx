@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { EChart } from "../components/EChart";
 import { Panel } from "../components/Panel";
 import { ETFFlow, apiGet } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 export function EtfPage() {
   const [btc, setBtc] = useState<ETFFlow[]>([]);
   const [eth, setEth] = useState<ETFFlow[]>([]);
 
   useEffect(() => {
-    apiGet<{ flows: ETFFlow[] }>("/etf?asset=BTC&page_size=30").then((data) => setBtc(data.flows));
-    apiGet<{ flows: ETFFlow[] }>("/etf?asset=ETH&page_size=30").then((data) => setEth(data.flows));
+    apiGet<{ flows: ETFFlow[] | null }>("/etf?asset=BTC&page_size=30").then((data) => setBtc(asArray(data.flows)));
+    apiGet<{ flows: ETFFlow[] | null }>("/etf?asset=ETH&page_size=30").then((data) => setEth(asArray(data.flows)));
   }, []);
 
   const chartOption = useMemo(

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Panel } from "../components/Panel";
 import { apiGet } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 type WhaleTransaction = {
   id: string;
@@ -16,7 +17,7 @@ export function WhalePage() {
   const [rows, setRows] = useState<WhaleTransaction[]>([]);
 
   useEffect(() => {
-    apiGet<{ transactions: WhaleTransaction[] }>("/whale?asset=BTC").then((data) => setRows(data.transactions));
+    apiGet<{ transactions: WhaleTransaction[] | null }>("/whale?asset=BTC").then((data) => setRows(asArray(data.transactions)));
   }, []);
 
   return (

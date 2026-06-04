@@ -20,7 +20,11 @@ func main() {
 	defer pool.Close()
 
 	repo := repository.New(pool)
-	if err := service.SeedDemoData(ctx, repo, cfg.DefaultSymbols); err != nil {
+	err = service.EnsureDefaultData(ctx, repo, cfg.DefaultSymbols)
+	if cfg.SeedDemoData {
+		err = service.SeedDemoData(ctx, repo, cfg.DefaultSymbols)
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }

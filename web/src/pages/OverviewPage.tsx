@@ -13,6 +13,7 @@ import {
   apiGet,
   apiPost,
 } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 type TrendWindow = {
   label: string;
@@ -53,31 +54,31 @@ export function OverviewPage() {
     async function load() {
       const errors: string[] = [];
       const [overviewResult, newsResult, btcEtfResult, ethEtfResult] = await Promise.allSettled([
-        apiGet<{ cards: OverviewCard[] }>("/market/overview"),
-        apiGet<{ news: NewsItem[] }>("/news?page_size=4"),
-        apiGet<{ flows: ETFFlow[] }>("/etf?asset=BTC&page_size=30"),
-        apiGet<{ flows: ETFFlow[] }>("/etf?asset=ETH&page_size=30"),
+        apiGet<{ cards: OverviewCard[] | null }>("/market/overview"),
+        apiGet<{ news: NewsItem[] | null }>("/news?page_size=4"),
+        apiGet<{ flows: ETFFlow[] | null }>("/etf?asset=BTC&page_size=30"),
+        apiGet<{ flows: ETFFlow[] | null }>("/etf?asset=ETH&page_size=30"),
       ]);
 
       if (overviewResult.status === "fulfilled") {
-        setCards(overviewResult.value.cards.filter((card) => focusSymbols.includes(card.symbol as (typeof focusSymbols)[number])));
+        setCards(asArray(overviewResult.value.cards).filter((card) => focusSymbols.includes(card.symbol as (typeof focusSymbols)[number])));
       } else {
         errors.push("market overview unavailable");
       }
       if (newsResult.status === "fulfilled") {
-        setNews(newsResult.value.news);
+        setNews(asArray(newsResult.value.news));
       } else {
         errors.push("news unavailable");
       }
 
       const etfItems: EtfSummary[] = [];
       if (btcEtfResult.status === "fulfilled") {
-        etfItems.push(summarizeEtf("BTC", btcEtfResult.value.flows));
+        etfItems.push(summarizeEtf("BTC", asArray(btcEtfResult.value.flows)));
       } else {
         errors.push("BTC ETF unavailable");
       }
       if (ethEtfResult.status === "fulfilled") {
-        etfItems.push(summarizeEtf("ETH", ethEtfResult.value.flows));
+        etfItems.push(summarizeEtf("ETH", asArray(ethEtfResult.value.flows)));
       } else {
         errors.push("ETH ETF unavailable");
       }
@@ -92,9 +93,9 @@ export function OverviewPage() {
             apiGet<Analysis>(`/analysis/${symbol}?interval=1h`),
             apiGet<Analysis>(`/analysis/${symbol}?interval=4h`),
             apiGet<Analysis>(`/analysis/${symbol}?interval=1d`),
-            apiGet<{ ohlcv: Kline[] }>(`/klines/${symbol}?interval=1h&limit=48`),
-            apiGet<{ ohlcv: Kline[] }>(`/klines/${symbol}?interval=4h&limit=50`),
-            apiGet<{ ohlcv: Kline[] }>(`/klines/${symbol}?interval=1d&limit=35`),
+            apiGet<{ ohlcv: Kline[] | null }>(`/klines/${symbol}?interval=1h&limit=48`),
+            apiGet<{ ohlcv: Kline[] | null }>(`/klines/${symbol}?interval=4h&limit=50`),
+            apiGet<{ ohlcv: Kline[] | null }>(`/klines/${symbol}?interval=1d&limit=35`),
             apiPost<AgentResponse>("/agent/chat", {
               question: `请从日、周、月三个周期分析 ${symbol} 的趋势和风险`,
               symbols: [symbol],
@@ -119,10 +120,10 @@ export function OverviewPage() {
           const dayAnalysis = dayAnalysisResult.value;
           const weekAnalysis = weekAnalysisResult.value;
           const monthAnalysis = monthAnalysisResult.value;
-          const hourKlines = hourKlinesResult.value;
-          const fourHourKlines = fourHourKlinesResult.value;
-          const dayKlines = dayKlinesResult.value;
-          monthlyNext[symbol] = dayKlines.ohlcv;
+          const hourKlines = asArray(hourKlinesResult.value.ohlcv);
+          const fourHourKlines = asArray(fourHourKlinesResult.value.ohlcv);
+          const dayKlines = asArray(dayKlinesResult.value.ohlcv);
+          monthlyNext[symbol] = dayKlines;
 
           const ai =
             aiResult.status === "fulfilled"
@@ -136,9 +137,9 @@ export function OverviewPage() {
           return {
             symbol,
             snapshot,
-            day: buildTrendWindow("日数据", hourKlines.ohlcv, 24, dayAnalysis),
-            week: buildTrendWindow("周数据", fourHourKlines.ohlcv, 42, weekAnalysis),
-            month: buildTrendWindow("月数据", dayKlines.ohlcv, 30, monthAnalysis),
+            day: buildTrendWindow("日数据", hourKlines, 24, dayAnalysis),
+            week: buildTrendWindow("周数据", fourHourKlines, 42, weekAnalysis),
+            month: buildTrendWindow("月数据", dayKlines, 30, monthAnalysis),
             ai,
           } satisfies AssetView;
         }),
@@ -345,8 +346,8 @@ function fallbackAgentResponse(symbol: string, day: Analysis, week: Analysis, mo
     answer: `${symbol} AI 摘要暂时不可用，先参考当前结构化分析结果。日线 ${day.trend}，周线 ${week.trend}，月线 ${month.trend}。`,
     trend: day.trend,
     risk_level: day.risk_level,
-    support: month.support_levels,
-    resistance: month.resistance_levels,
+    support: asArray(month.support_levels),
+    resistance: asArray(month.resistance_levels),
     evidence: [],
     data_timestamp: day.ts,
   };

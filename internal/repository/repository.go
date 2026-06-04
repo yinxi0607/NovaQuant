@@ -374,7 +374,8 @@ func (r *Repository) ListNews(ctx context.Context, symbol string, limit int) ([]
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, source, title, url, published_at, related_symbols, sentiment, sentiment_score::double precision, summary
 		FROM news_items
-		WHERE $1 = '' OR $1 = ANY(related_symbols)
+		WHERE ($1 = '' OR $1 = ANY(related_symbols))
+		  AND source <> 'seed'
 		ORDER BY published_at DESC
 		LIMIT $2
 	`, symbol, limit)
@@ -416,10 +417,11 @@ func (r *Repository) ListETFFlows(ctx context.Context, asset string, limit int) 
 			       COALESCE(note, '') AS note,
 			       ROW_NUMBER() OVER (
 			           PARTITION BY asset, flow_date
-			           ORDER BY CASE WHEN provider = 'seed' THEN 1 ELSE 0 END, created_at DESC
+			           ORDER BY created_at DESC
 			       ) AS rn
 			FROM etf_flows
-			WHERE $1 = '' OR asset = $1
+			WHERE ($1 = '' OR asset = $1)
+			  AND provider <> 'seed'
 		)
 		SELECT id, asset, provider, flow_date, net_flow_usd, total_volume_usd, note
 		FROM ranked

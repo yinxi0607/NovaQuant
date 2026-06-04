@@ -1,19 +1,62 @@
 import { useEffect, useState } from "react";
 import { MetricGrid } from "../components/MetricGrid";
 import { Panel } from "../components/Panel";
-import { AlertEvent, Risk, apiGet } from "../lib/api";
+import { APIError, AlertEvent, Risk, apiGet } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 export function RiskPage() {
   const [risk, setRisk] = useState<Risk | null>(null);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    apiGet<Risk>("/risk/BTCUSDT").then(setRisk);
-    apiGet<{ alerts: AlertEvent[] }>("/alerts").then((data) => setAlerts(data.alerts));
+    let cancelled = false;
+
+    async function load() {
+      const errors: string[] = [];
+      const [riskResult, alertsResult] = await Promise.allSettled([
+        apiGet<Risk>("/risk/BTCUSDT"),
+        apiGet<{ alerts?: AlertEvent[] | null }>("/alerts"),
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      if (riskResult.status === "fulfilled") {
+        setRisk(riskResult.value);
+      } else {
+        errors.push(formatLoadError("risk", riskResult.reason));
+      }
+
+      if (alertsResult.status === "fulfilled") {
+        const rawAlerts = alertsResult.value.alerts;
+        const nextAlerts = asArray(rawAlerts);
+        setAlerts(nextAlerts);
+        if (rawAlerts !== undefined && !Array.isArray(rawAlerts)) {
+          errors.push("alerts payload invalid");
+        }
+      } else {
+        errors.push(formatLoadError("alerts", alertsResult.reason));
+      }
+
+      setLoadError(errors.join(" | "));
+    }
+
+    load().catch((error) => {
+      if (!cancelled) {
+        setLoadError(error instanceof Error ? error.message : "risk page load failed");
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
     <div className="page-grid">
+      {loadError ? <p className="error-banner">{loadError}</p> : null}
       <Panel title="Risk Gauge" subtitle="BTC 风险中心">
         {risk ? (
           <MetricGrid
@@ -39,8 +82,19 @@ export function RiskPage() {
               <p>{item.message}</p>
             </article>
           ))}
+          {!alerts.length ? <p className="muted">No alerts available.</p> : null}
         </div>
       </Panel>
     </div>
   );
+}
+
+function formatLoadError(scope: string, reason: unknown) {
+  if (reason instanceof APIError) {
+    return `${scope} request failed (${reason.status})`;
+  }
+  if (reason instanceof Error) {
+    return `${scope} request failed: ${reason.message}`;
+  }
+  return `${scope} request failed`;
 }

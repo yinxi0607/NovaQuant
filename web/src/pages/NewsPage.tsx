@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Panel } from "../components/Panel";
 import { NewsItem, apiGet } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 export function NewsPage() {
   const [news, setNews] = useState<NewsItem[]>([]);
 
   useEffect(() => {
-    apiGet<{ news: NewsItem[] }>("/news?page_size=10").then((data) => setNews(data.news));
+    apiGet<{ news: NewsItem[] | null }>("/news?page_size=10").then((data) => setNews(asArray(data.news)));
   }, []);
 
   return (

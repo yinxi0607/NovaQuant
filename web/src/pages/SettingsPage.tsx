@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Panel } from "../components/Panel";
 import { apiGet } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 type SymbolConfig = {
   symbol: string;
@@ -18,7 +19,7 @@ export function SettingsPage() {
   const [health, setHealth] = useState<Health | null>(null);
 
   useEffect(() => {
-    apiGet<{ symbols: SymbolConfig[] }>("/symbols").then((data) => setSymbols(data.symbols));
+    apiGet<{ symbols: SymbolConfig[] | null }>("/symbols").then((data) => setSymbols(asArray(data.symbols)));
     apiGet<Health>("/health").then(setHealth);
   }, []);
 

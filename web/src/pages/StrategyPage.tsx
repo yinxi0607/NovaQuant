@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import { EChart } from "../components/EChart";
 import { Panel } from "../components/Panel";
 import { BacktestResponse, apiPost } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 export function StrategyPage() {
   const [response, setResponse] = useState<BacktestResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const equityCurve = asArray(response?.result?.equity_curve);
 
   async function runBacktest(strategy: string) {
     setLoading(true);
@@ -28,11 +30,11 @@ export function StrategyPage() {
 
   const option = useMemo(
     () => ({
-      xAxis: { type: "category", data: response?.result.equity_curve.map((item) => item.time.slice(5, 16)) ?? [], axisLabel: { color: "#94a3b8" } },
+      xAxis: { type: "category", data: equityCurve.map((item) => item.time.slice(5, 16)), axisLabel: { color: "#94a3b8" } },
       yAxis: { type: "value", axisLabel: { color: "#94a3b8" } },
-      series: [{ type: "line", data: response?.result.equity_curve.map((item) => item.equity) ?? [], lineStyle: { color: "#f59e0b" } }],
+      series: [{ type: "line", data: equityCurve.map((item) => item.equity), lineStyle: { color: "#f59e0b" } }],
     }),
-    [response],
+    [equityCurve],
   );
 
   return (

@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { Panel } from "../components/Panel";
 import { AgentResponse, apiPost } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 export function ResearchPage() {
   const [question, setQuestion] = useState("分析 BTC 风险，现在是否过热？");
@@ -41,7 +42,7 @@ export function ResearchPage() {
               <span className="price-tag bear-tag">Risk {response.risk_level}</span>
             </div>
             <div className="list">
-              {response.evidence.map((item, index) => (
+              {asArray(response.evidence).map((item, index) => (
                 <article key={`${item.type}-${index}`} className="list-item">
                   <strong>{item.type}</strong>
                   <p className="muted">{item.summary}</p>

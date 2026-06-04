@@ -41,6 +41,7 @@ services:
     environment:
       PG_DSN: postgres://${DOCKER_POSTGRES_USER:-novaquant}:${DOCKER_POSTGRES_PASSWORD:-password}@db:5432/${DOCKER_POSTGRES_DB:-novaquant}?sslmode=disable
       REDIS_URL: ${DOCKER_REDIS_URL}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
     depends_on:
       migrate:
         condition: service_completed_successfully

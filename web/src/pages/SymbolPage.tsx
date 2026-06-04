@@ -4,6 +4,7 @@ import { EChart } from "../components/EChart";
 import { MetricGrid } from "../components/MetricGrid";
 import { Panel } from "../components/Panel";
 import { Analysis, Kline, Risk, Snapshot, apiGet } from "../lib/api";
+import { asArray } from "../lib/collections";
 
 const detailSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] as const;
 
@@ -18,7 +19,7 @@ export function SymbolPage() {
     apiGet<Snapshot>(`/market/${symbol}`).then(setSnapshot);
     apiGet<Analysis>(`/analysis/${symbol}?interval=1h`).then(setAnalysis);
     apiGet<Risk>(`/risk/${symbol}`).then(setRisk);
-    apiGet<{ ohlcv: Kline[] }>(`/klines/${symbol}?interval=1h&limit=72`).then((data) => setKlines(data.ohlcv));
+    apiGet<{ ohlcv: Kline[] | null }>(`/klines/${symbol}?interval=1h&limit=72`).then((data) => setKlines(asArray(data.ohlcv)));
   }, [symbol]);
 
   const option = useMemo(

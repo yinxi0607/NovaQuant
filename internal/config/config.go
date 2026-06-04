@@ -21,6 +21,7 @@ type Config struct {
 	LLMAPIKey           string
 	LLMModel            string
 	LLMChatPath         string
+	SeedDemoData        bool
 	CollectorEnabled    bool
 	MarketDataProvider  string
 	MarketDataProviders []string
@@ -59,6 +60,7 @@ func Load() Config {
 		LLMAPIKey:           getenv("LLM_API_KEY", getenv("OPENAI_API_KEY", "")),
 		LLMModel:            getenv("LLM_MODEL", ""),
 		LLMChatPath:         getenv("LLM_CHAT_PATH", "/v1/chat/completions"),
+		SeedDemoData:        parseBool(getenv("SEED_DEMO_DATA", "false"), false),
 		CollectorEnabled:    parseBool(getenv("COLLECTOR_ENABLED", "false"), false),
 		MarketDataProvider:  strings.ToLower(getenv("MARKET_DATA_PROVIDER", "okx")),
 		MarketDataProviders: marketDataProviders(),
