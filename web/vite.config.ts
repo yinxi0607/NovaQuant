@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0",
       port: Number(env.WEB_PORT ?? "51740"),
+      allowedHosts: ["nova-quant.wjxconline.com"],
     },
     preview: {
       allowedHosts: ["nova-quant.wjxconline.com"],
