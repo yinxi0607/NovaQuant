@@ -515,11 +515,13 @@ func sleepWithContext(ctx context.Context, delay time.Duration) error {
 }
 
 type Collector struct {
-	repo      *repository.Repository
-	providers []MarketProvider
-	etf       ETFCollector
-	news      NewsCollector
-	metrics   *metrics.Registry
+	repo         *repository.Repository
+	providers    []MarketProvider
+	etf          ETFCollector
+	news         NewsCollector
+	metrics      *metrics.Registry
+	lastETFSync  time.Time
+	lastNewsSync time.Time
 }
 
 type partialCollectionError struct {
@@ -555,6 +557,15 @@ func (c *Collector) RunOnce(ctx context.Context, symbols, intervals []string) er
 	var issues []string
 	successes := 0
 	seenETFAssets := map[string]bool{}
+	now := time.Now().UTC()
+	shouldCollectETF := c.etf != nil && shouldRunSecondaryCollection(c.lastETFSync, now)
+	shouldCollectNews := c.news != nil && shouldRunSecondaryCollection(c.lastNewsSync, now)
+	if shouldCollectETF {
+		c.lastETFSync = now
+	}
+	if shouldCollectNews {
+		c.lastNewsSync = now
+	}
 	for _, symbol := range symbols {
 		price, ts, spotSource, err := c.fetchPrice(ctx, symbol)
 		if err != nil {
@@ -600,7 +611,7 @@ func (c *Collector) RunOnce(ctx context.Context, symbols, intervals []string) er
 			successes++
 		}
 		asset := strings.TrimSuffix(strings.ToUpper(symbol), "USDT")
-		if c.etf != nil && (asset == "BTC" || asset == "ETH") && !seenETFAssets[asset] {
+		if shouldCollectETF && (asset == "BTC" || asset == "ETH") && !seenETFAssets[asset] {
 			seenETFAssets[asset] = true
 			rows, providerName, err := c.etf.GetSummaryHistory(ctx, asset)
 			if err != nil {
@@ -616,7 +627,7 @@ func (c *Collector) RunOnce(ctx context.Context, symbols, intervals []string) er
 			}
 		}
 	}
-	if c.news != nil {
+	if shouldCollectNews {
 		rows, _, err := c.news.GetLatest(ctx, 50)
 		if err != nil {
 			issues = append(issues, fmt.Sprintf("news: %v", err))
@@ -695,6 +706,13 @@ func parseMillis(value any) time.Time {
 	default:
 		return time.Now().UTC()
 	}
+}
+
+func shouldRunSecondaryCollection(lastRun, now time.Time) bool {
+	if lastRun.IsZero() {
+		return true
+	}
+	return now.Sub(lastRun) >= time.Hour
 }
 
 func parseAnyFloat(value any) float64 {

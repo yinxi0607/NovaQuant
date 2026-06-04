@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -121,6 +120,7 @@ func (c *SoSoETFCollector) getJSONOnce(ctx context.Context, endpoint string, out
 	if err != nil {
 		return err
 	}
+	applySoSoHeaders(req)
 	req.Header.Set("x-soso-api-key", c.apiKey)
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -131,12 +131,7 @@ func (c *SoSoETFCollector) getJSONOnce(ctx context.Context, endpoint string, out
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		upstreamErr := fmt.Errorf("upstream %s: %s", resp.Status, strings.TrimSpace(string(body)))
-		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
-			return &retryableUpstreamError{err: upstreamErr}
-		}
-		return upstreamErr
+		return decodeUpstreamHTTPError(resp)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		if isRetryableDecodeError(err) {

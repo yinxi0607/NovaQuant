@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -136,6 +135,7 @@ func getJSONWithHeadersOnce(ctx context.Context, client *http.Client, endpoint s
 	if err != nil {
 		return err
 	}
+	applySoSoHeaders(req)
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
@@ -157,15 +157,6 @@ func getJSONWithHeadersOnce(ctx context.Context, client *http.Client, endpoint s
 		return err
 	}
 	return nil
-}
-
-func decodeUpstreamHTTPError(resp *http.Response) error {
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-	upstreamErr := fmt.Errorf("upstream %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
-		return &retryableUpstreamError{err: upstreamErr}
-	}
-	return upstreamErr
 }
 
 func parseUnixMillisString(value string) time.Time {
